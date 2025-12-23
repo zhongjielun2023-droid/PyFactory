@@ -4,6 +4,7 @@ PyFactory - 机器系统
 """
 
 import pygame
+import math
 from typing import Optional, List, Dict, Any, Callable, Tuple
 from abc import ABC, abstractmethod
 from shapes import Shape, ShapePackage, ShapeDict, create_shape
@@ -43,35 +44,62 @@ class Connection:
         self.items_in_transit.append((item, 0.0))
     
     def draw(self, surface: pygame.Surface, offset_x: int = 0, offset_y: int = 0):
-        """绘制连接线和传输中的物品"""
+        """绘制连接线和传输中的物品（带发光效果）"""
         start_x = self.from_machine.x * GRID_SIZE + GRID_SIZE // 2 + offset_x
         start_y = self.from_machine.y * GRID_SIZE + GRID_SIZE // 2 + offset_y
         end_x = self.to_machine.x * GRID_SIZE + GRID_SIZE // 2 + offset_x
         end_y = self.to_machine.y * GRID_SIZE + GRID_SIZE // 2 + offset_y
         
-        # 绘制连接线
+        # 发光效果（有物品传输时更亮）
+        glow_intensity = 0.3 if self.items_in_transit else 0.1
+        for i in range(3, 0, -1):
+            alpha = int(60 * glow_intensity * (1 - i / 3))
+            glow_color = (*COLORS['accent'][:3], alpha)
+            glow_surface = pygame.Surface((surface.get_width(), surface.get_height()), pygame.SRCALPHA)
+            pygame.draw.line(glow_surface, glow_color,
+                           (start_x, start_y), (end_x, end_y), 4 + i * 3)
+            surface.blit(glow_surface, (0, 0))
+        
+        # 主连接线
         pygame.draw.line(surface, COLORS['conveyor'], 
                         (start_x, start_y), (end_x, end_y), 4)
         
         # 绘制箭头
         self._draw_arrow(surface, start_x, start_y, end_x, end_y)
         
-        # 绘制传输中的物品
+        # 绘制传输中的物品（带平滑插值）
         for item, progress in self.items_in_transit:
-            item_x = int(start_x + (end_x - start_x) * progress)
-            item_y = int(start_y + (end_y - start_y) * progress)
+            # 使用缓动函数让移动更平滑
+            smooth_progress = self._ease_out_quad(progress)
+            item_x = int(start_x + (end_x - start_x) * smooth_progress)
+            item_y = int(start_y + (end_y - start_y) * smooth_progress)
+            
+            # 物品发光
             if isinstance(item, Shape):
+                self._draw_item_glow(surface, item_x, item_y, item.get_color_rgb())
                 item.draw(surface, item_x, item_y, 0.5)
+    
+    def _ease_out_quad(self, t: float) -> float:
+        """缓出二次方缓动"""
+        return 1 - (1 - t) ** 2
+    
+    def _draw_item_glow(self, surface: pygame.Surface, x: int, y: int, 
+                        color: Tuple[int, int, int]):
+        """绘制物品发光效果"""
+        for i in range(4, 0, -1):
+            alpha = int(40 * (1 - i / 4))
+            glow_surface = pygame.Surface((30, 30), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surface, (*color, alpha), (15, 15), 8 + i * 2)
+            surface.blit(glow_surface, (x - 15, y - 15))
     
     def _draw_arrow(self, surface: pygame.Surface, x1: int, y1: int, 
                     x2: int, y2: int):
         """绘制箭头"""
-        import math
         angle = math.atan2(y2 - y1, x2 - x1)
         mid_x = (x1 + x2) // 2
         mid_y = (y1 + y2) // 2
         
-        arrow_size = 8
+        arrow_size = 10
         p1 = (mid_x - arrow_size * math.cos(angle - 0.5),
               mid_y - arrow_size * math.sin(angle - 0.5))
         p2 = (mid_x - arrow_size * math.cos(angle + 0.5),
@@ -98,6 +126,11 @@ class Machine(ABC):
         self.current_item = None
         self.enabled = True
         self.code = ""  # 关联的代码
+        
+        # 动画状态
+        self.anim_time = 0.0
+        self.pulse_intensity = 0.0
+        self.scale = 1.0
         
     def get_info(self) -> Dict[str, str]:
         """获取机器信息"""
@@ -142,12 +175,16 @@ class Machine(ABC):
     
     def update(self, dt: float):
         """更新机器状态"""
+        # 更新动画
+        self.anim_time += dt
+        
         if not self.enabled:
             return
             
         # 更新处理中的物品
         if self.is_processing:
             self.current_process_time += dt
+            self.pulse_intensity = 0.5 + 0.5 * math.sin(self.anim_time * 8)
             if self.current_process_time >= self.processing_time:
                 result = self.process(self.current_item)
                 if result is not None:
@@ -159,6 +196,9 @@ class Machine(ABC):
                 self.is_processing = False
                 self.current_item = None
                 self.current_process_time = 0
+                self.pulse_intensity = 0
+        else:
+            self.pulse_intensity = max(0, self.pulse_intensity - dt * 3)
         
         # 开始处理新物品
         if not self.is_processing and self.input_buffer:
@@ -171,9 +211,11 @@ class Machine(ABC):
             conn.update(dt)
     
     def draw(self, surface: pygame.Surface, offset_x: int = 0, offset_y: int = 0):
-        """绘制机器"""
+        """绘制机器（带发光和动画效果）"""
         x = self.x * GRID_SIZE + offset_x
         y = self.y * GRID_SIZE + offset_y
+        center_x = x + GRID_SIZE // 2
+        center_y = y + GRID_SIZE // 2
         
         # 绘制机器背景
         rect = pygame.Rect(x + 4, y + 4, GRID_SIZE - 8, GRID_SIZE - 8)
@@ -190,27 +232,33 @@ class Machine(ABC):
         else:
             color = COLORS['machine']
         
-        pygame.draw.rect(surface, color, rect, border_radius=8)
-        pygame.draw.rect(surface, COLORS['text'], rect, 2, border_radius=8)
+        # 发光效果（处理中更亮）
+        glow_intensity = 0.2 + self.pulse_intensity * 0.5
+        self._draw_glow(surface, rect, color, glow_intensity)
         
-        # 绘制机器名称
-        font = get_font(18)
-        name = info.get('name', self.machine_type)
-        text = font.render(name, True, COLORS['text'])
-        text_rect = text.get_rect(center=(x + GRID_SIZE // 2, y + GRID_SIZE - 12))
-        surface.blit(text, text_rect)
+        # 主体
+        pygame.draw.rect(surface, color, rect, border_radius=10)
+        pygame.draw.rect(surface, COLORS['text'], rect, 2, border_radius=10)
         
-        # 绘制正在处理的物品
-        if self.current_item and isinstance(self.current_item, Shape):
-            self.current_item.draw(surface, x + GRID_SIZE // 2, 
-                                  y + GRID_SIZE // 2 - 5, 0.4)
-        
-        # 绘制处理进度
+        # 处理进度条
         if self.is_processing:
             progress = self.current_process_time / self.processing_time
             bar_width = int((GRID_SIZE - 16) * progress)
-            pygame.draw.rect(surface, COLORS['success'], 
-                           (x + 8, y + GRID_SIZE - 6, bar_width, 3))
+            bar_rect = pygame.Rect(x + 8, y + GRID_SIZE - 12, bar_width, 4)
+            pygame.draw.rect(surface, COLORS['success'], bar_rect, border_radius=2)
+    
+    def _draw_glow(self, surface: pygame.Surface, rect: pygame.Rect, 
+                   color: Tuple[int, int, int], intensity: float):
+        """绘制发光效果"""
+        if intensity <= 0:
+            return
+        for i in range(4, 0, -1):
+            alpha = int(40 * intensity * (1 - i / 4))
+            glow_rect = rect.inflate(i * 4, i * 4)
+            glow_surface = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surface, (*color, alpha), 
+                           glow_surface.get_rect(), border_radius=12 + i)
+            surface.blit(glow_surface, glow_rect.topleft)
 
 
 class SourceMachine(Machine):

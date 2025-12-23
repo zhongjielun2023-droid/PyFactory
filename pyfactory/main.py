@@ -644,15 +644,10 @@ source.connect(output)
                 self.selected_machine = None
                 self.is_connecting = False
                 self.connection_start = None
-                self.color_picker.visible = False
     
     def _show_machine_options(self, machine: Machine):
-        """显示机器选项"""
-        from machines import PainterMachine, SourceMachine
-        if isinstance(machine, (PainterMachine, SourceMachine)):
-            self.color_picker.visible = True
-        else:
-            self.color_picker.visible = False
+        """显示机器选项（代码驱动模式下不显示）"""
+        pass  # 代码驱动模式不需要手动选项
     
     def update(self, dt: float):
         game_engine.update(dt)
@@ -1089,13 +1084,13 @@ class HelpScene(GameScene):
 
 
 class DemoScene(GameScene):
-    """演示场景 - 展示游戏玩法"""
+    """演示场景 - 展示游戏玩法（代码驱动）"""
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
         
-        # 网格区域
-        self.grid_x = 220
+        # 网格区域（右侧）
+        self.grid_x = 450
         self.grid_y = 100
         self.grid_width = GRID_COLS * GRID_SIZE
         self.grid_height = GRID_ROWS * GRID_SIZE
@@ -1107,116 +1102,170 @@ class DemoScene(GameScene):
         
         # 创建演示工厂
         self.factory = Factory()
-        self._setup_demo()
         
-        # 演示状态
+        # 演示步骤（代码 + 说明）
         self.demo_step = 0
         self.demo_timer = 0
         self.auto_running = False
-        self.step_texts = [
-            "欢迎来到 PyFactory！这是一个通过建造工厂学习Python的游戏。",
-            "[源头] 机器会自动产生基础图形...",
-            "[染色机] 可以改变图形的颜色...",
-            "[输出口] 收集最终产品，完成关卡目标！",
-            "当图形正确送达输出口时，关卡完成！",
-            "现在返回菜单，开始你的工厂之旅吧！"
+        
+        # 每一步的代码和说明
+        self.steps = [
+            {
+                'title': '游戏目标',
+                'desc': '用Python代码建造工厂，\n将图形从[源头]加工后\n送到[输出口]完成关卡！',
+                'code': '# 欢迎来到 PyFactory!\n# 这是一个用代码建工厂的游戏\n',
+                'machines': []
+            },
+            {
+                'title': '第1步：创建源头',
+                'desc': 'Source() 创建源头机器\n它会自动产生图形\n参数: 形状, 颜色',
+                'code': '# 创建一个产生白色圆形的源头\nsource = Source("circle", "white")',
+                'machines': [('source', 1, 3, {'shape_type': 'circle', 'color': 'white'})]
+            },
+            {
+                'title': '第2步：创建输出口',
+                'desc': 'Output() 创建输出口\n图形送到这里就算完成\n',
+                'code': '# 创建源头\nsource = Source("circle", "white")\n\n# 创建输出口\noutput = Output()',
+                'machines': [
+                    ('source', 1, 3, {'shape_type': 'circle', 'color': 'white'}),
+                    ('output', 5, 3, {})
+                ]
+            },
+            {
+                'title': '第3步：连接机器',
+                'desc': '.connect() 连接两个机器\n图形会沿着连线流动\n',
+                'code': '# 创建源头\nsource = Source("circle", "white")\n# 创建输出口\noutput = Output()\n\n# 连接：源头 -> 输出口\nsource.connect(output)',
+                'machines': [
+                    ('source', 1, 3, {'shape_type': 'circle', 'color': 'white'}),
+                    ('output', 5, 3, {})
+                ],
+                'connections': [(0, 1)]
+            },
+            {
+                'title': '第4步：添加染色机',
+                'desc': 'Painter() 染色机\n可以把图形染成指定颜色\n',
+                'code': 'source = Source("circle", "white")\npainter = Painter("red")  # 染成红色\noutput = Output()\n\nsource.connect(painter)\npainter.connect(output)',
+                'machines': [
+                    ('source', 1, 3, {'shape_type': 'circle', 'color': 'white'}),
+                    ('painter', 3, 3, {'target_color': 'red'}),
+                    ('output', 5, 3, {})
+                ],
+                'connections': [(0, 1), (1, 2)]
+            },
+            {
+                'title': '运行工厂！',
+                'desc': '点击[运行]按钮启动工厂\n观察图形如何流动和变化\n\n完成后返回菜单开始游戏！',
+                'code': '# 完整代码示例：\nsource = Source("circle", "white")\npainter = Painter("red")\noutput = Output()\n\nsource.connect(painter)\npainter.connect(output)',
+                'machines': [
+                    ('source', 1, 3, {'shape_type': 'circle', 'color': 'white'}),
+                    ('painter', 3, 3, {'target_color': 'red'}),
+                    ('output', 5, 3, {})
+                ],
+                'connections': [(0, 1), (1, 2)]
+            }
         ]
         
+        self._apply_step(0)
+        
         # 控制按钮
-        self.start_btn = Button(WINDOW_WIDTH // 2 - 60, WINDOW_HEIGHT - 80, 
-                               120, 45, "▶ 开始演示", self._start_demo,
-                               color=COLORS['success'])
-        self.next_btn = Button(WINDOW_WIDTH // 2 + 80, WINDOW_HEIGHT - 80,
-                              100, 45, "下一步 →", self._next_step)
-        self.next_btn.font_size = 20
+        self.prev_btn = Button(20, WINDOW_HEIGHT - 70, 100, 45, "← 上一步", self._prev_step)
+        self.prev_btn.font_size = 18
+        self.next_btn = Button(130, WINDOW_HEIGHT - 70, 100, 45, "下一步 →", self._next_step,
+                              color=COLORS['success'])
+        self.next_btn.font_size = 18
+        self.run_btn = Button(250, WINDOW_HEIGHT - 70, 100, 45, "▶ 运行", self._toggle_run,
+                             color=COLORS['accent'])
+        self.run_btn.font_size = 18
         
-    def _setup_demo(self):
-        """设置演示工厂"""
-        # 放置源头
-        source = SourceMachine(1, 3)
-        source.shape_type = 'circle'
-        source.color = 'white'
-        self.factory.add_machine(source)
-        
-        # 放置染色机
-        from machines import PainterMachine
-        painter = PainterMachine(4, 3)
-        painter.target_color = 'red'
-        self.factory.add_machine(painter)
-        
-        # 放置输出口
-        output = OutputMachine(7, 3)
-        output.required_count = 3
-        output.target_shape = create_shape('circle', 'red')
-        self.factory.add_machine(output)
-        
-        # 连接机器
-        self.factory.connect(source, painter)
-        self.factory.connect(painter, output)
-        
-    def _start_demo(self):
-        """开始演示"""
-        self.auto_running = True
-        self.factory.running = True
-        self.demo_step = 1
-        self.start_btn.text = "⏸ 暂停"
-        self.start_btn.callback = self._pause_demo
-        
-    def _pause_demo(self):
-        """暂停演示"""
-        self.auto_running = False
+    def _apply_step(self, step_idx: int):
+        """应用指定步骤的工厂配置"""
+        self.factory.machines.clear()
+        self.factory.connections.clear()
         self.factory.running = False
-        self.start_btn.text = "▶ 继续"
-        self.start_btn.callback = self._start_demo
+        self.auto_running = False
         
+        step = self.steps[step_idx]
+        machine_objs = []
+        
+        # 创建机器
+        from machines import PainterMachine, RotatorMachine
+        for m_type, x, y, props in step.get('machines', []):
+            if m_type == 'source':
+                m = SourceMachine(x, y)
+                m.shape_type = props.get('shape_type', 'circle')
+                m.color = props.get('color', 'white')
+            elif m_type == 'painter':
+                m = PainterMachine(x, y)
+                m.target_color = props.get('target_color', 'red')
+            elif m_type == 'output':
+                m = OutputMachine(x, y)
+                m.required_count = 5
+            else:
+                continue
+            self.factory.add_machine(m)
+            machine_objs.append(m)
+        
+        # 创建连接
+        for from_idx, to_idx in step.get('connections', []):
+            if from_idx < len(machine_objs) and to_idx < len(machine_objs):
+                self.factory.connect(machine_objs[from_idx], machine_objs[to_idx])
+    
+    def _prev_step(self):
+        """上一步"""
+        if self.demo_step > 0:
+            self.demo_step -= 1
+            self._apply_step(self.demo_step)
+    
     def _next_step(self):
         """下一步"""
-        if self.demo_step < len(self.step_texts) - 1:
+        if self.demo_step < len(self.steps) - 1:
             self.demo_step += 1
-            if self.demo_step == 1:
-                self._start_demo()
+            self._apply_step(self.demo_step)
         else:
             self.game.switch_scene('menu')
     
+    def _toggle_run(self):
+        """切换运行状态"""
+        if self.auto_running:
+            self.auto_running = False
+            self.factory.running = False
+            self.run_btn.text = "▶ 运行"
+        else:
+            self.auto_running = True
+            self.factory.running = True
+            self.run_btn.text = "⏸ 暂停"
+    
     def handle_event(self, event: pygame.event.Event):
         self.back_btn.handle_event(event)
-        self.start_btn.handle_event(event)
+        self.prev_btn.handle_event(event)
         self.next_btn.handle_event(event)
+        self.run_btn.handle_event(event)
         
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
+            if event.key == pygame.K_LEFT:
+                self._prev_step()
+            elif event.key == pygame.K_RIGHT or event.key == pygame.K_SPACE:
                 self._next_step()
             elif event.key == pygame.K_ESCAPE:
                 self.game.switch_scene('menu')
     
     def update(self, dt: float):
-        # 更新演示进度
         if self.auto_running:
-            self.demo_timer += dt
-            
-            # 自动推进步骤
-            if self.demo_timer > 3.0 and self.demo_step < 4:
-                self.demo_step += 1
-                self.demo_timer = 0
-            
-            # 更新工厂
             self.factory.update(dt)
-            
-            # 检查是否完成
-            for machine in self.factory.machines:
-                if isinstance(machine, OutputMachine):
-                    if machine.is_goal_reached():
-                        self.demo_step = 4
-                        self.auto_running = False
-                        self.factory.running = False
     
     def draw(self, surface: pygame.Surface):
         surface.fill(COLORS['background'])
         
         # 标题
-        title_font = get_font(42)
-        title = title_font.render("[游戏演示]", True, COLORS['accent'])
-        surface.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 30))
+        title_font = get_font(36)
+        title = title_font.render("新手教程 - 学习用代码建工厂", True, COLORS['accent'])
+        surface.blit(title, (WINDOW_WIDTH // 2 - title.get_width() // 2, 20))
+        
+        # 绘制左侧代码面板
+        self._draw_code_panel(surface)
+        
+        # 绘制右侧说明面板
+        self._draw_desc_panel(surface)
         
         # 绘制网格
         self._draw_grid(surface)
@@ -1228,17 +1277,92 @@ class DemoScene(GameScene):
         # 绘制机器
         for machine in self.factory.machines:
             machine.draw(surface, self.grid_x, self.grid_y)
-            
-            # 绘制机器标签
             self._draw_machine_label(surface, machine)
         
-        # 绘制说明文字
-        self._draw_explanation(surface)
+        # 绘制进度指示
+        self._draw_progress(surface)
         
-        # 绘制UI
+        # 绘制UI按钮
         self.back_btn.draw(surface)
-        self.start_btn.draw(surface)
+        self.prev_btn.draw(surface)
         self.next_btn.draw(surface)
+        self.run_btn.draw(surface)
+    
+    def _draw_code_panel(self, surface: pygame.Surface):
+        """绘制代码面板"""
+        panel_x, panel_y = 20, 70
+        panel_w, panel_h = 400, 280
+        
+        # 背景
+        rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        pygame.draw.rect(surface, COLORS['panel_bg'], rect, border_radius=8)
+        pygame.draw.rect(surface, COLORS['accent'], rect, 2, border_radius=8)
+        
+        # 标题
+        font = get_font(20)
+        title = font.render("Python 代码", True, COLORS['accent'])
+        surface.blit(title, (panel_x + 10, panel_y + 10))
+        
+        # 代码内容
+        code_font = get_font(16)
+        step = self.steps[self.demo_step]
+        code_lines = step['code'].split('\n')
+        
+        y = panel_y + 45
+        for i, line in enumerate(code_lines):
+            # 行号
+            line_num = code_font.render(f"{i+1:2}", True, COLORS['text_secondary'])
+            surface.blit(line_num, (panel_x + 10, y))
+            
+            # 代码（简单高亮）
+            if line.strip().startswith('#'):
+                color = COLORS['text_secondary']
+            elif '=' in line and 'connect' not in line:
+                color = COLORS['success']
+            elif '.connect' in line:
+                color = COLORS['warning']
+            else:
+                color = COLORS['text']
+            
+            code_text = code_font.render(line, True, color)
+            surface.blit(code_text, (panel_x + 40, y))
+            y += 22
+    
+    def _draw_desc_panel(self, surface: pygame.Surface):
+        """绘制说明面板"""
+        panel_x, panel_y = 20, 370
+        panel_w, panel_h = 400, 180
+        
+        # 背景
+        rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        pygame.draw.rect(surface, COLORS['panel_bg'], rect, border_radius=8)
+        pygame.draw.rect(surface, COLORS['success'], rect, 2, border_radius=8)
+        
+        step = self.steps[self.demo_step]
+        
+        # 步骤标题
+        title_font = get_font(24)
+        title = title_font.render(step['title'], True, COLORS['success'])
+        surface.blit(title, (panel_x + 15, panel_y + 15))
+        
+        # 说明文字
+        desc_font = get_font(18)
+        desc_lines = step['desc'].split('\n')
+        y = panel_y + 55
+        for line in desc_lines:
+            text = desc_font.render(line, True, COLORS['text'])
+            surface.blit(text, (panel_x + 15, y))
+            y += 26
+    
+    def _draw_progress(self, surface: pygame.Surface):
+        """绘制进度指示"""
+        total = len(self.steps)
+        progress_y = WINDOW_HEIGHT - 30
+        
+        font = get_font(16)
+        text = font.render(f"步骤 {self.demo_step + 1} / {total}  |  按 ← → 切换", 
+                          True, COLORS['text_secondary'])
+        surface.blit(text, (WINDOW_WIDTH // 2 - text.get_width() // 2, progress_y))
         
     def _draw_grid(self, surface: pygame.Surface):
         """绘制网格"""
@@ -1275,24 +1399,6 @@ class DemoScene(GameScene):
         
         surface.blit(text, (x - text.get_width() // 2, y))
     
-    def _draw_explanation(self, surface: pygame.Surface):
-        """绘制说明文字"""
-        # 说明面板
-        panel_rect = pygame.Rect(50, WINDOW_HEIGHT - 180, WINDOW_WIDTH - 100, 80)
-        pygame.draw.rect(surface, COLORS['panel_bg'], panel_rect, border_radius=10)
-        pygame.draw.rect(surface, COLORS['accent'], panel_rect, 2, border_radius=10)
-        
-        # 当前说明文字
-        font = get_font(26)
-        text = font.render(self.step_texts[self.demo_step], True, COLORS['text'])
-        surface.blit(text, (panel_rect.x + 20, panel_rect.y + 25))
-        
-        # 进度指示
-        progress_font = get_font(18)
-        progress = progress_font.render(f"步骤 {self.demo_step + 1}/{len(self.step_texts)}  |  按空格继续", 
-                                       True, COLORS['text_secondary'])
-        surface.blit(progress, (panel_rect.right - progress.get_width() - 20, 
-                               panel_rect.bottom - 30))
 
 
 class PyFactoryGame:

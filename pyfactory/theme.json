@@ -1,0 +1,81 @@
+{
+    "defaults": {
+        "colours": {
+            "normal_bg": "#1e1e28",
+            "hovered_bg": "#2a2a3a",
+            "disabled_bg": "#15151d",
+            "selected_bg": "#3a3a4a",
+            "active_bg": "#2a2a3a",
+            "dark_bg": "#15151d",
+            "normal_text": "#ffffff",
+            "hovered_text": "#ffffff",
+            "disabled_text": "#808080",
+            "selected_text": "#ffffff",
+            "active_text": "#ffffff",
+            "normal_border": "#64c8ff",
+            "hovered_border": "#78d8ff",
+            "disabled_border": "#404050",
+            "selected_border": "#64c8ff",
+            "active_border": "#64c8ff"
+        },
+        "font": {
+            "name": "notosanscjksc",
+            "size": "18",
+            "bold": "0"
+        }
+    },
+    "#title_label": {
+        "colours": {
+            "normal_text": "#64c8ff"
+        },
+        "font": {
+            "size": "48",
+            "bold": "1"
+        }
+    },
+    "#success_button": {
+        "colours": {
+            "normal_bg": "#1a4a2a",
+            "hovered_bg": "#2a6a3a",
+            "normal_border": "#64ff96"
+        }
+    },
+    "#accent_button": {
+        "colours": {
+            "normal_bg": "#1a3a5a",
+            "hovered_bg": "#2a4a6a",
+            "normal_border": "#64c8ff"
+        }
+    },
+    "#warning_button": {
+        "colours": {
+            "normal_bg": "#4a3a1a",
+            "hovered_bg": "#5a4a2a",
+            "normal_border": "#ffc864"
+        }
+    },
+    "#code_editor": {
+        "colours": {
+            "normal_bg": "#12121a",
+            "dark_bg": "#0a0a10",
+            "normal_border": "#64c8ff"
+        },
+        "font": {
+            "name": "fira code,consolas,monospace",
+            "size": "14"
+        }
+    },
+    "#panel": {
+        "colours": {
+            "normal_bg": "#1e1e28",
+            "dark_bg": "#15151d",
+            "normal_border": "#3a3a4a"
+        }
+    },
+    "#hint_panel": {
+        "colours": {
+            "normal_bg": "#1a2a1a",
+            "normal_border": "#64ff96"
+        }
+    }
+}
