@@ -1,0 +1,3 @@
+.vscode
+pyfactory/__pycache__
+*.db
