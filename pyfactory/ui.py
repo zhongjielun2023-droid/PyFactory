@@ -12,6 +12,17 @@ from config import (
 from fonts import get_font
 
 
+# 简单的全局 tooltip 管理（保证 tooltip 在最上层绘制）
+_active_tooltip = {'text': None, 'pos': (0, 0)}
+
+def set_tooltip(text: str, pos: Tuple[int, int]):
+    _active_tooltip['text'] = text
+    _active_tooltip['pos'] = pos
+
+def clear_tooltip():
+    _active_tooltip['text'] = None
+
+
 class UIElement:
     """UI元素基类"""
     
@@ -131,15 +142,23 @@ class IconButton(Button):
         pygame.draw.circle(surface, COLORS['panel_border'], center, 
                           self.width // 2, 2)
         
-        # 绘制图标文字
-        font = get_font(self.font_size)
+        # 绘制图标文字，使用符号字体优先以避免乱码
+        try:
+            from fonts import get_symbol_font
+            font = get_symbol_font(self.font_size)
+        except Exception:
+            font = get_font(self.font_size)
         text_surface = font.render(self.icon, True, self.text_color)
         text_rect = text_surface.get_rect(center=center)
         surface.blit(text_surface, text_rect)
         
-        # 绘制提示
+        # 当悬停时注册全局 tooltip（由上层统一绘制以保证在最上层）
         if self.hovered and self.tooltip:
-            self._draw_tooltip(surface)
+            set_tooltip(self.tooltip, (self.x + self.width + 5, self.y))
+        else:
+            # 仅在当前 tooltip 匹配时清除，避免覆盖其他元素的 tooltip
+            if _active_tooltip.get('text') == self.tooltip:
+                clear_tooltip()
     
     def _draw_tooltip(self, surface: pygame.Surface):
         font = get_font(20)
@@ -169,6 +188,9 @@ class Panel(UIElement):
         self.draggable = False
         self.drag_offset = (0, 0)
         self.is_dragging = False
+        # 标题字体大小（可调整以避免标题超出分隔线）
+        self.title_font_size = 28
+        self._last_title_height = None
         
     def add_child(self, child: UIElement):
         self.children.append(child)
@@ -222,14 +244,17 @@ class Panel(UIElement):
         pygame.draw.rect(surface, self.border_color, rect, 2, border_radius=8)
         
         # 绘制标题
+        title_height = 0
         if self.title:
-            font = get_font(28)
+            font = get_font(self.title_font_size)
             title_surface = font.render(self.title, True, COLORS['text'])
+            # 计算标题区域高度，确保不会被分隔线截断
+            title_height = max(self.title_font_size + 12, 32)
             surface.blit(title_surface, (self.x + 10, self.y + 8))
-            
-            # 标题分隔线
+            # 标题分隔线根据计算的高度绘制
             pygame.draw.line(surface, self.border_color,
-                           (self.x, self.y + 32), (self.x + self.width, self.y + 32))
+                           (self.x, self.y + title_height), (self.x + self.width, self.y + title_height))
+            self._last_title_height = title_height
         
         # 绘制子元素
         for child in self.children:
@@ -965,6 +990,18 @@ class Toast:
             surface.blit(text, (rect.x + 15, rect.y + 8))
             y += rect.height + 5
 
+        # 在所有 UI 之上绘制全局 tooltip（如果有）
+        tt = _active_tooltip.get('text')
+        if tt:
+            tx, ty = _active_tooltip.get('pos', (0, 0))
+            tip_font = get_font(18)
+            tip_surf = tip_font.render(tt, True, COLORS['text'])
+            pad = 6
+            tip_rect = pygame.Rect(tx, ty, tip_surf.get_width() + pad * 2, tip_surf.get_height() + pad * 2)
+            pygame.draw.rect(surface, COLORS['panel_bg'], tip_rect, border_radius=4)
+            pygame.draw.rect(surface, COLORS['panel_border'], tip_rect, 1, border_radius=4)
+            surface.blit(tip_surf, (tip_rect.x + pad, tip_rect.y + pad))
+
 
 class ConfirmDialog(Panel):
     """确认对话框"""
@@ -1013,6 +1050,7 @@ class HintPanel(Panel):
         super().__init__(x, y, width, height, "提示")
         self.hints: List[str] = []
         self.current_hint = 0
+        self._last_pos = (self.x, self.y)
         
     def set_hints(self, hints: List[str]):
         self.hints = hints
@@ -1054,6 +1092,21 @@ class HintPanel(Panel):
                              "下一个", self.next_hint)
             next_btn.font_size = 18
             self.add_child(next_btn)
+        else:
+            # 最后一页时显示关闭按钮
+            close_btn = Button(self.x + 15, self.y + self.height - 45, 80, 30,
+                               "关闭", self.skip)
+            close_btn.font_size = 18
+            self.add_child(close_btn)
+
+        # 记录构建时的位置，用于后续移动时重新布局
+        self._last_pos = (self.x, self.y)
+
+    def draw(self, surface: pygame.Surface):
+        # 如果面板位置改变，重新构建显示内容以使文字与面板对齐
+        if (self.x, self.y) != getattr(self, '_last_pos', (None, None)):
+            self._update_display()
+        super().draw(surface)
     
     def _wrap_text(self, text: str, max_width: int) -> List[str]:
         """文本换行"""
@@ -1075,6 +1128,13 @@ class HintPanel(Panel):
             lines.append(current_line)
         
         return lines
+
+    def skip(self):
+        """关闭提示面板"""
+        self.visible = False
+        # 重置到第一页，下次打开时从头开始
+        self.current_hint = 0
+        self._update_display()
 
 
 class ColorPicker(Panel):
@@ -1291,15 +1351,36 @@ class TutorialOverlay:
         title_surface = title_font.render(step['title'], True, COLORS['accent'])
         surface.blit(title_surface, (dialog_x + 20, dialog_y + 15))
         
-        # 内容
+        # 内容（支持自动换行）
         content_font = get_font(22)
-        content_lines = step['content'].split('\n')
         y_offset = 60
-        for line in content_lines:
-            if line:
-                text_surface = content_font.render(line, True, COLORS['text'])
+        def _wrap_text_local(text: str, font: pygame.font.Font, max_w: int) -> List[str]:
+            words = text.split(' ')
+            lines: List[str] = []
+            cur = ''
+            for w in words:
+                test = (cur + ' ' + w) if cur else w
+                if font.size(test)[0] <= max_w:
+                    cur = test
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            return lines
+
+        # 将段落按换行符分割，再对每段做自动换行
+        paragraphs = step.get('content', '').split('\n')
+        for para in paragraphs:
+            if not para.strip():
+                y_offset += 20
+                continue
+            wrapped = _wrap_text_local(para, content_font, dialog_width - 40)
+            for l in wrapped:
+                text_surface = content_font.render(l, True, COLORS['text'])
                 surface.blit(text_surface, (dialog_x + 20, dialog_y + y_offset))
-            y_offset += 28
+                y_offset += 28
         
         # 底部提示
         hint_font = get_font(18)

@@ -11,6 +11,7 @@ PyFactory - Python工厂教学游戏
 import pygame
 import sys
 import json
+import time
 from typing import Optional, List, Dict, Any
 
 from config import (
@@ -28,6 +29,7 @@ from ui import (
     ConfirmDialog, HintPanel, ColorPicker, IconButton,
     TutorialOverlay, tutorial
 )
+from ui import clear_tooltip
 from fonts import get_font
 from code_parser import parser as code_parser, get_template
 
@@ -986,12 +988,20 @@ source.connect(output)
             surface.blit(concept, (self.grid_x + self.grid_width + 20,
                                   self.grid_y + 140))
         
-        # 计时
-        if level.factory.running:
-            elapsed = level.elapsed_time if level.is_completed else \
-                     (pygame.time.get_ticks() / 1000 - level.start_time)
-        else:
-            elapsed = level.elapsed_time
+        # 计时（更稳健的计算，避免 start_time 未初始化或错误导致的负值）
+        try:
+            if level.factory.running:
+                # 使用 time.time() 与 Level.start/stop 保持一致
+                start = getattr(level, 'start_time', None)
+                now = time.time()
+                if start and now >= start:
+                    elapsed = (level.elapsed_time or 0.0) + (now - start)
+                else:
+                    elapsed = max(0.0, float(level.elapsed_time or 0.0))
+            else:
+                elapsed = float(level.elapsed_time or 0.0)
+        except Exception:
+            elapsed = 0.0
         
         time_text = f"时间: {elapsed:.1f}s"
         time_label = font.render(time_text, True, COLORS['text_secondary'])
@@ -1564,12 +1574,35 @@ class DemoScene(GameScene):
         
         # 说明文字
         desc_font = get_font(18)
-        desc_lines = step['desc'].split('\n')
+        # 说明文字（自动换行）
+        desc_font = get_font(18)
         y = panel_y + 55
-        for line in desc_lines:
-            text = desc_font.render(line, True, COLORS['text'])
-            surface.blit(text, (panel_x + 15, y))
-            y += 26
+        def _wrap_text_local(text: str, font: pygame.font.Font, max_w: int):
+            words = text.split(' ')
+            lines = []
+            cur = ''
+            for w in words:
+                test = (cur + ' ' + w) if cur else w
+                if font.size(test)[0] <= max_w:
+                    cur = test
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            return lines
+
+        paragraphs = step.get('desc', '').split('\n')
+        for para in paragraphs:
+            if not para.strip():
+                y += 10
+                continue
+            wrapped = _wrap_text_local(para, desc_font, panel_w - 30)
+            for l in wrapped:
+                text = desc_font.render(l, True, COLORS['text'])
+                surface.blit(text, (panel_x + 15, y))
+                y += 26
     
     def _draw_progress(self, surface: pygame.Surface):
         """绘制进度指示"""
@@ -1709,6 +1742,12 @@ class PyFactoryGame:
             self.current_scene.update(dt)
     
     def draw(self):
+        # 每帧先清除全局 tooltip，再让当前场景在每帧内注册（被悬停的按钮会设置 tooltip）
+        try:
+            clear_tooltip()
+        except Exception:
+            pass
+
         if self.current_scene:
             self.current_scene.draw(self.screen)
         

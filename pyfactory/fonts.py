@@ -86,6 +86,20 @@ class FontManager:
         
         # 如果找不到，使用None（默认字体，可能不支持中文）
         self._font_path = None
+        # 查找可能包含符号/图标的系统字体（用于渲染如 ▶ 等字符）
+        try:
+            available = pygame.font.get_fonts()
+            symbol_candidates = [
+                'segoeuisymbol', 'segoeui', 'seguisymbol', 'notoemoji',
+                'symbola', 'arialunicodems', 'emojione', 'twemoji', 'applecoloremoji'
+            ]
+            self._symbol_name = None
+            for name in symbol_candidates:
+                if name in available:
+                    self._symbol_name = name
+                    break
+        except Exception:
+            self._symbol_name = None
     
     def get_font(self, size: int) -> pygame.font.Font:
         """获取指定大小的字体"""
@@ -126,6 +140,24 @@ def get_font_manager() -> FontManager:
 def get_font(size: int) -> pygame.font.Font:
     """获取指定大小的字体"""
     return get_font_manager().get_font(size)
+
+
+def get_symbol_font(size: int) -> pygame.font.Font:
+    """获取用于渲染符号/图标的字体（如果可用）。"""
+    fm = get_font_manager()
+    try:
+        # 优先使用已检测到的系统符号字体
+        if getattr(fm, '_symbol_name', None):
+            return pygame.font.SysFont(fm._symbol_name, size)
+        # 回退到常见的符号字体尝试
+        for candidate in ['segoeuisymbol', 'seguisymbol', 'notoemoji', 'symbola', 'arialunicodems']:
+            font_path = pygame.font.match_font(candidate)
+            if font_path:
+                return pygame.font.Font(font_path, size)
+    except Exception:
+        pass
+    # 最后退回到主字体
+    return get_font(size)
 
 
 def render_text(text: str, size: int, color: tuple) -> pygame.Surface:
