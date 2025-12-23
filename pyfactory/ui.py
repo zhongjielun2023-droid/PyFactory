@@ -469,6 +469,14 @@ class CodeEditor(Panel):
         self.on_change = on_change  # 代码变化回调
         self.error_line = -1  # 错误行号
         self.error_msg = ""  # 错误信息
+        # 撤销/重做栈
+        self._undo_stack: List[Tuple[List[str], int, int]] = []
+        self._redo_stack: List[Tuple[List[str], int, int]] = []
+        self._max_undo = 100
+        # IME 组合文本状态
+        self._composition: str = ""
+        self._composition_start: int = 0
+        self._composition_length: int = 0
         
     def set_code(self, code: str):
         self.code = code
@@ -514,6 +522,56 @@ class CodeEditor(Panel):
                         return i - 1
                 return i
         return len(line)
+
+    def _get_text_width(self, text: str) -> int:
+        """返回给定文本的像素宽度，按需初始化字体。"""
+        if self.font is None:
+            self.font = get_font(16)
+        try:
+            return self.font.size(text)[0]
+        except Exception:
+            # 兜底：如果传入None或其他异常，返回0
+            return 0
+
+    def _save_undo_state(self):
+        """保存当前编辑状态到撤销栈，并清空重做栈"""
+        # 深拷贝行列表以保留历史
+        state = ([ln for ln in self.lines], self.cursor_line, self.cursor_col)
+        self._undo_stack.append(state)
+        # 限制栈大小
+        if len(self._undo_stack) > self._max_undo:
+            self._undo_stack.pop(0)
+        # 对于新的编辑，清空重做栈
+        self._redo_stack.clear()
+
+    def undo(self):
+        """撤回到上一个状态（如果有）"""
+        if not self._undo_stack:
+            return
+        # 当前状态入重做栈
+        cur_state = ([ln for ln in self.lines], self.cursor_line, self.cursor_col)
+        self._redo_stack.append(cur_state)
+        # 恢复上一个状态
+        state = self._undo_stack.pop()
+        self.lines, self.cursor_line, self.cursor_col = ([ln for ln in state[0]], state[1], state[2])
+        # 调整视图
+        self._ensure_cursor_visible()
+        if self.on_change:
+            self.on_change(self.get_code())
+
+    def redo(self):
+        """重做上一次被撤回的操作（如果有）"""
+        if not self._redo_stack:
+            return
+        # 当前状态入撤销栈
+        cur_state = ([ln for ln in self.lines], self.cursor_line, self.cursor_col)
+        self._undo_stack.append(cur_state)
+        # 恢复重做栈顶
+        state = self._redo_stack.pop()
+        self.lines, self.cursor_line, self.cursor_col = ([ln for ln in state[0]], state[1], state[2])
+        self._ensure_cursor_visible()
+        if self.on_change:
+            self.on_change(self.get_code())
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -530,14 +588,47 @@ class CodeEditor(Panel):
                                        len(self.lines) - 1)
                 line = self.lines[self.cursor_line]
                 self.cursor_col = self._get_cursor_col_from_x(line, click_x)
+                # 如果获得焦点，启动文本输入以支持 IME
+                try:
+                    pygame.key.start_text_input()
+                except Exception:
+                    pass
                 return True
+            else:
+                # 失去焦点时停止文本输入并清除未提交组合
+                if was_focused:
+                    try:
+                        pygame.key.stop_text_input()
+                    except Exception:
+                        pass
+                    self._composition = ""
+                    self._composition_start = 0
+                    self._composition_length = 0
         
         # 使用 TEXTINPUT 事件处理文本输入（支持输入法）
+        if event.type == pygame.TEXTEDITING and self.focused:
+            # 正在组合的文本（未最终提交）
+            # event.text, event.start, event.length
+            try:
+                self._composition = event.text
+                self._composition_start = event.start
+                self._composition_length = event.length
+            except Exception:
+                self._composition = ""
+                self._composition_start = 0
+                self._composition_length = 0
+            return True
+
         if event.type == pygame.TEXTINPUT and self.focused:
+            # 提交文本（输入法确认或直接输入）
             self._save_undo_state()  # 保存撤回状态
             current = self.lines[self.cursor_line]
             self.lines[self.cursor_line] = current[:self.cursor_col] + event.text + current[self.cursor_col:]
             self.cursor_col += len(event.text)
+            # 清除组合文本状态
+            self._composition = ""
+            self._composition_start = 0
+            self._composition_length = 0
             self._ensure_cursor_visible()
             if self.on_change:
                 self.on_change(self.get_code())
@@ -561,10 +652,15 @@ class CodeEditor(Panel):
                 return True
             
             # 保存撤回状态（在修改前）
-            if event.key in (pygame.K_RETURN, pygame.K_BACKSPACE, pygame.K_DELETE, pygame.K_TAB):
+            # 小键盘 Enter 也应当被识别为回车
+            kp_enter = getattr(pygame, 'K_KP_ENTER', None)
+            enter_keys = (pygame.K_RETURN, pygame.K_BACKSPACE, pygame.K_DELETE, pygame.K_TAB)
+            if kp_enter is not None:
+                enter_keys = (pygame.K_RETURN, kp_enter, pygame.K_BACKSPACE, pygame.K_DELETE, pygame.K_TAB)
+            if event.key in enter_keys:
                 self._save_undo_state()
             
-            if event.key == pygame.K_RETURN:
+            if event.key == pygame.K_RETURN or (kp_enter is not None and event.key == kp_enter):
                 current = self.lines[self.cursor_line]
                 # 自动缩进
                 indent = ""
@@ -760,8 +856,30 @@ class CodeEditor(Panel):
                 if self.cursor_col > 0:
                     prefix = self.font.render(line[:self.cursor_col], True, COLORS['text'])
                     cursor_x += prefix.get_width()
-                pygame.draw.line(surface, COLORS['accent'],
-                               (cursor_x, y), (cursor_x, y + self.line_height - 4), 2)
+                # 如果存在未提交的组合文本（IME），在光标处显示它
+                if getattr(self, '_composition', ''):
+                    comp_text = self._composition
+                    comp_surf = self.font.render(comp_text, True, COLORS['text_secondary'])
+                    comp_w = comp_surf.get_width()
+                    # 用面板背景覆盖原有文本位置，再绘制组合文本
+                    cover_rect = pygame.Rect(cursor_x, y, comp_w + 4, self.line_height)
+                    try:
+                        pygame.draw.rect(surface, COLORS['panel_bg'], cover_rect)
+                    except Exception:
+                        pygame.draw.rect(surface, (30, 30, 30), cover_rect)
+                    surface.blit(comp_surf, (cursor_x + 2, y))
+                    # 在组合文本内显示插入点
+                    caret_offset = self._composition_start if hasattr(self, '_composition_start') else 0
+                    try:
+                        caret_pref = self.font.render(comp_text[:caret_offset], True, COLORS['text'])
+                        caret_x = cursor_x + 2 + caret_pref.get_width()
+                    except Exception:
+                        caret_x = cursor_x
+                    pygame.draw.line(surface, COLORS['accent'],
+                                   (caret_x, y), (caret_x, y + self.line_height - 4), 2)
+                else:
+                    pygame.draw.line(surface, COLORS['accent'],
+                                   (cursor_x, y), (cursor_x, y + self.line_height - 4), 2)
         
         surface.set_clip(None)
         
