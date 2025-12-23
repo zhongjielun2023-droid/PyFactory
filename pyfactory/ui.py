@@ -468,6 +468,7 @@ class CodeEditor(Panel):
         self.on_change = on_change  # 代码变化回调
         self.error_line = -1  # 错误行号
         self.error_msg = ""  # 错误信息
+        self._last_sent_code = None  # 用于避免在光标键等无文本变动时重复触发回调
         
     def set_code(self, code: str):
         self.code = code
@@ -535,9 +536,14 @@ class CodeEditor(Panel):
                 self.lines[self.cursor_line] = current[:self.cursor_col] + event.unicode + current[self.cursor_col:]
                 self.cursor_col += 1
             
-            # 触发代码变化回调
+            # 仅在内容真实改变时触发代码变化回调（避免箭头键等仅移动光标导致触发）
             if self.on_change:
-                self.on_change(self.get_code())
+                current_code = self.get_code()
+                if current_code != self._last_sent_code:
+                    try:
+                        self.on_change(current_code)
+                    finally:
+                        self._last_sent_code = current_code
             
             return True
         

@@ -476,11 +476,23 @@ source.connect(output)
         
         if error:
             return  # 有错误时不更新工厂
-        
-        # 清空当前工厂
+
+        # 如果解析结果为空且代码不是空（例如正在输入的不完整语句），
+        # 则不立即清空工厂，避免输入过程中画面闪烁或消失。
+        if not machines and not connections:
+            # 代码为空则清空工厂；否则保留当前工厂直到有有效解析
+            if not code.strip():
+                factory = game_engine.get_current_factory()
+                factory.clear()
+            return
+
+        # 清空当前工厂（开始用解析结果重建）
         factory = game_engine.get_current_factory()
-        factory.machines.clear()
-        factory.connections.clear()
+        # 使用工厂的 clear() 方法以确保 grid 等内部结构也被清理
+        factory.clear()
+
+        # 调试输出，便于定位解析与构建问题
+        print(f"[DEBUG] _on_code_change: code lines={len(code.splitlines())}, machines_parsed={len(machines)}, connections_parsed={len(connections)}")
         
         # 根据解析结果创建机器
         machine_objects = []
@@ -496,8 +508,11 @@ source.connect(output)
                 elif m_config['type'] == 'rotator':
                     machine.rotation_amount = m_config.get('rotation', 90)
                 
-                factory.add_machine(machine)
-                machine_objects.append(machine)
+                added = factory.add_machine(machine)
+                if not added:
+                    print(f"[WARN] 无法添加机器到工厂: {machine.machine_type} at ({machine.x},{machine.y}) - 位置已被占用")
+                else:
+                    machine_objects.append(machine)
         
         # 创建连接
         for from_idx, to_idx in connections:
@@ -665,14 +680,28 @@ source.connect(output)
         # 绘制网格
         self._draw_grid(surface)
         
-        # 绘制连接线
+        # 绘制机器（捕获异常以避免单个绘制错误导致画面空白）
         factory = game_engine.get_current_factory()
-        for conn in factory.connections:
-            conn.draw(surface, self.grid_x, self.grid_y)
-        
-        # 绘制机器
         for machine in factory.machines:
-            machine.draw(surface, self.grid_x, self.grid_y)
+            try:
+                machine.draw(surface, self.grid_x, self.grid_y)
+            except Exception as e:
+                print(f"绘制机器失败: {e} - {getattr(machine, 'machine_type', None)} at ({getattr(machine, 'x', '?')},{getattr(machine, 'y','?')})")
+                # 可视化占位，便于定位问题
+                try:
+                    import pygame as _pygame
+                    rx = machine.x * GRID_SIZE + self.grid_x + 4
+                    ry = machine.y * GRID_SIZE + self.grid_y + 4
+                    _pygame.draw.rect(surface, (120, 20, 20), _pygame.Rect(rx, ry, GRID_SIZE-8, GRID_SIZE-8))
+                except Exception:
+                    pass
+
+        # 绘制连接线（放在机器上层以保证可见）
+        for conn in factory.connections:
+            try:
+                conn.draw(surface, self.grid_x, self.grid_y)
+            except Exception as e:
+                print(f"绘制连接失败: {e}")
         
         # 绘制正在进行的连接
         if self.is_connecting and self.connection_start:
@@ -1270,14 +1299,31 @@ class DemoScene(GameScene):
         # 绘制网格
         self._draw_grid(surface)
         
-        # 绘制连接
-        for conn in self.factory.connections:
-            conn.draw(surface, self.grid_x, self.grid_y)
-        
-        # 绘制机器
+        # 绘制机器（捕获异常）并在失败时绘制占位
         for machine in self.factory.machines:
-            machine.draw(surface, self.grid_x, self.grid_y)
-            self._draw_machine_label(surface, machine)
+            try:
+                machine.draw(surface, self.grid_x, self.grid_y)
+            except Exception as e:
+                print(f"Demo 绘制机器失败: {e} - {getattr(machine,'machine_type',None)} at ({getattr(machine,'x','?')},{getattr(machine,'y','?')})")
+                try:
+                    import pygame as _pygame
+                    rx = machine.x * GRID_SIZE + self.grid_x + 4
+                    ry = machine.y * GRID_SIZE + self.grid_y + 4
+                    _pygame.draw.rect(surface, (120, 20, 20), _pygame.Rect(rx, ry, GRID_SIZE-8, GRID_SIZE-8))
+                except Exception:
+                    pass
+            # 机器标签
+            try:
+                self._draw_machine_label(surface, machine)
+            except Exception:
+                pass
+
+        # 绘制连接（在机器上层）
+        for conn in self.factory.connections:
+            try:
+                conn.draw(surface, self.grid_x, self.grid_y)
+            except Exception as e:
+                print(f"Demo 绘制连接失败: {e}")
         
         # 绘制进度指示
         self._draw_progress(surface)
