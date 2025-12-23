@@ -1,5 +1,3 @@
 .vscode
 pyfactory/__pycache__
 *.db
-*.png
-.venv

@@ -291,6 +291,25 @@ class SourceMachine(Machine):
         """设置输出的图形类型"""
         self.shape_type = shape_type
         self.color = color
+    
+    def draw(self, surface: pygame.Surface, offset_x: int = 0, offset_y: int = 0):
+        """绘制源头机器 - 显示产出的图形"""
+        super().draw(surface, offset_x, offset_y)
+        
+        x = self.x * GRID_SIZE + offset_x
+        y = self.y * GRID_SIZE + offset_y
+        center_x = x + GRID_SIZE // 2
+        center_y = y + GRID_SIZE // 2
+        
+        # 绘制产出的图形预览
+        preview_shape = create_shape(self.shape_type, self.color)
+        if preview_shape:
+            preview_shape.draw(surface, center_x, center_y, 0.5)
+        
+        # 显示机器名称
+        font = get_font(14)
+        text = font.render("源头", True, COLORS['text'])
+        surface.blit(text, (x + 4, y + 4))
 
 
 class OutputMachine(Machine):
@@ -329,12 +348,26 @@ class OutputMachine(Machine):
         
         x = self.x * GRID_SIZE + offset_x
         y = self.y * GRID_SIZE + offset_y
+        center_x = x + GRID_SIZE // 2
+        center_y = y + GRID_SIZE // 2
+        
+        # 绘制输出标识（箭头向下）
+        pygame.draw.polygon(surface, COLORS['success'], [
+            (center_x, center_y + 12),
+            (center_x - 10, center_y - 5),
+            (center_x + 10, center_y - 5)
+        ])
+        
+        # 显示机器名称
+        font = get_font(14)
+        text = font.render("输出", True, COLORS['text'])
+        surface.blit(text, (x + 4, y + 4))
         
         # 显示收集进度
-        font = get_font(18)
-        text = font.render(f"{self.success_count}/{self.required_count}", 
+        count_font = get_font(16)
+        count_text = count_font.render(f"{self.success_count}/{self.required_count}", 
                           True, COLORS['success'])
-        surface.blit(text, (x + 5, y + 5))
+        surface.blit(count_text, (x + GRID_SIZE - count_text.get_width() - 4, y + GRID_SIZE - 18))
 
 
 class ConveyorMachine(Machine):
@@ -364,6 +397,26 @@ class PainterMachine(Machine):
     def set_color(self, color: str):
         """设置目标颜色"""
         self.target_color = color
+    
+    def draw(self, surface: pygame.Surface, offset_x: int = 0, offset_y: int = 0):
+        """绘制染色机 - 显示目标颜色"""
+        super().draw(surface, offset_x, offset_y)
+        
+        x = self.x * GRID_SIZE + offset_x
+        y = self.y * GRID_SIZE + offset_y
+        center_x = x + GRID_SIZE // 2
+        center_y = y + GRID_SIZE // 2
+        
+        # 绘制目标颜色圆圈
+        color_key = f'shape_{self.target_color}'
+        paint_color = COLORS.get(color_key, COLORS.get('shape_white', (255, 255, 255)))
+        pygame.draw.circle(surface, paint_color, (center_x, center_y), 15)
+        pygame.draw.circle(surface, COLORS['text'], (center_x, center_y), 15, 2)
+        
+        # 显示机器名称
+        font = get_font(14)
+        text = font.render("染色", True, COLORS['text'])
+        surface.blit(text, (x + 4, y + 4))
 
 
 class CutterMachine(Machine):

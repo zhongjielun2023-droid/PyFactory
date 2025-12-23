@@ -53,9 +53,14 @@ class LoginScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self._create_ui()
+    
+    def _create_ui(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
-        center_x = WINDOW_WIDTH // 2
-        center_y = WINDOW_HEIGHT // 2
+        center_x = w // 2
+        center_y = h // 2
         
         # 标题
         self.title_label = Label(center_x, 150, "PyFactory", 
@@ -73,13 +78,17 @@ class LoginScene(GameScene):
                                 font_size=20, color=COLORS['error'], centered=True)
         
         # 提示信息
-        self.hint_label = Label(center_x, WINDOW_HEIGHT - 50, 
+        self.hint_label = Label(center_x, h - 50, 
                                "默认账号: x  密码: 1",
                                font_size=18, color=COLORS['text_secondary'], centered=True)
         
         # 预填默认账号
         self.username_input.text = "x"
         self.password_input.text = "1"
+    
+    def on_resize(self, width: int, height: int):
+        """窗口大小变化时更新布局"""
+        self._create_ui()
     
     def _on_login(self):
         username = self.username_input.text.strip()
@@ -145,8 +154,13 @@ class MenuScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self._create_ui()
+    
+    def _create_ui(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
-        center_x = WINDOW_WIDTH // 2
+        center_x = w // 2
         
         # 标题
         self.title = Label(center_x, 80, "PyFactory", 
@@ -154,27 +168,28 @@ class MenuScene(GameScene):
         
         # 用户信息
         username = game_engine.current_user.get('username', '') if game_engine.current_user else ''
-        self.user_label = Label(WINDOW_WIDTH - 20, 20, f"用户: {username}",
+        self.user_label = Label(w - 150, 20, f"用户: {username}",
                                font_size=20, color=COLORS['text_secondary'])
-        self.user_label.x = WINDOW_WIDTH - 150
         
-        # 菜单按钮
-        btn_width = 300
-        btn_height = 60
+        # 菜单按钮 - 自适应布局
+        btn_width = min(300, w - 100)
+        btn_height = 55
         btn_x = center_x - btn_width // 2
+        btn_spacing = 70
+        start_y = 180
         
-        self.demo_btn = Button(btn_x, 180, btn_width, btn_height,
+        self.demo_btn = Button(btn_x, start_y, btn_width, btn_height,
                                "[新手演示]", lambda: self.game.switch_scene('demo'),
                                color=COLORS['success'])
-        self.level_btn = Button(btn_x, 260, btn_width, btn_height, 
+        self.level_btn = Button(btn_x, start_y + btn_spacing, btn_width, btn_height, 
                                "关卡模式", lambda: self.game.switch_scene('level_select'))
-        self.sandbox_btn = Button(btn_x, 340, btn_width, btn_height,
+        self.sandbox_btn = Button(btn_x, start_y + btn_spacing * 2, btn_width, btn_height,
                                  "沙盒模式", self._start_sandbox)
-        self.blueprint_btn = Button(btn_x, 420, btn_width, btn_height,
+        self.blueprint_btn = Button(btn_x, start_y + btn_spacing * 3, btn_width, btn_height,
                                    "我的蓝图", lambda: self.game.switch_scene('blueprints'))
-        self.achievement_btn = Button(btn_x, 500, btn_width, btn_height,
+        self.achievement_btn = Button(btn_x, start_y + btn_spacing * 4, btn_width, btn_height,
                                      "成就", lambda: self.game.switch_scene('achievements'))
-        self.logout_btn = Button(btn_x, 580, btn_width, btn_height,
+        self.logout_btn = Button(btn_x, start_y + btn_spacing * 5, btn_width, btn_height,
                                 "退出登录", self._logout)
         
         self.buttons = [
@@ -184,6 +199,10 @@ class MenuScene(GameScene):
         
         # 进度统计
         self._load_stats()
+    
+    def on_resize(self, width: int, height: int):
+        """窗口大小变化时更新布局"""
+        self._create_ui()
     
     def _load_stats(self):
         progress = game_engine.get_user_progress()
@@ -224,6 +243,12 @@ class LevelSelectScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self.current_category = 'basics'
+        self._create_ui()
+    
+    def _create_ui(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
         # 返回按钮
         self.back_btn = Button(20, 20, 100, 40, "← 返回",
@@ -231,17 +256,20 @@ class LevelSelectScene(GameScene):
         self.back_btn.font_size = 20
         
         # 标题
-        self.title = Label(WINDOW_WIDTH // 2, 40, "选择关卡",
+        self.title = Label(w // 2, 40, "选择关卡",
                           font_size=48, color=COLORS['accent'], centered=True)
         
         # 类别标签页
         self.category_buttons: List[Button] = []
-        self.current_category = 'basics'
         self._create_category_tabs()
         
         # 关卡网格
-        self.level_panel = ScrollPanel(50, 150, WINDOW_WIDTH - 100, WINDOW_HEIGHT - 180)
+        self.level_panel = ScrollPanel(50, 150, w - 100, h - 180)
         self._load_levels()
+    
+    def on_resize(self, width: int, height: int):
+        """窗口大小变化时更新布局"""
+        self._create_ui()
     
     def _create_category_tabs(self):
         x = 50
@@ -345,11 +373,12 @@ class GameScene_(GameScene):
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
         
-        # 网格区域
-        self.grid_x = 220
-        self.grid_y = 60
-        self.grid_width = GRID_COLS * GRID_SIZE
-        self.grid_height = GRID_ROWS * GRID_SIZE
+        # 可调整的布局参数
+        self.code_panel_width = 280  # 代码面板宽度
+        self.hint_panel_width = 270  # 提示面板宽度
+        
+        # 网格区域（动态计算）
+        self._update_layout()
         
         # 操作提示面板（常驻显示）
         self.op_hints = [
@@ -369,13 +398,28 @@ class GameScene_(GameScene):
         ]
         
         # 代码编辑器（始终显示，带实时解析回调）
-        self.code_editor = CodeEditor(10, 60, 200, WINDOW_HEIGHT - 80, self._on_code_change)
+        self.code_editor = CodeEditor(10, 60, self.code_panel_width - 20, WINDOW_HEIGHT - 80, self._on_code_change)
         self.code_editor.visible = True
         self.code_editor.title = "Python代码"
         
         # 提示面板
-        self.hint_panel = HintPanel(WINDOW_WIDTH - 280, 60, 270, 200)
+        self.hint_panel = HintPanel(WINDOW_WIDTH - self.hint_panel_width - 10, 60, self.hint_panel_width, 200)
         self.hint_panel.visible = True
+        
+        # 分割条（可拖动调整大小）
+        from ui import Splitter
+        self.left_splitter = Splitter(
+            self.code_panel_width, 60, WINDOW_HEIGHT - 80,
+            orientation='vertical',
+            min_pos=150, max_pos=500,
+            on_drag=self._on_left_splitter_drag
+        )
+        self.right_splitter = Splitter(
+            WINDOW_WIDTH - self.hint_panel_width - 10, 60, WINDOW_HEIGHT - 80,
+            orientation='vertical',
+            min_pos=WINDOW_WIDTH - 400, max_pos=WINDOW_WIDTH - 150,
+            on_drag=self._on_right_splitter_drag
+        )
         
         # 控制按钮
         self._create_control_buttons()
@@ -395,50 +439,126 @@ class GameScene_(GameScene):
     
     def _create_control_buttons(self):
         btn_y = 15
-        btn_size = 40
+        btn_size = 36
         
-        # 返回按钮
-        self.back_btn = Button(10, btn_y, 80, 35, "← 返回",
-                              self._on_back)
-        self.back_btn.font_size = 18
+        # 返回按钮（固定左上角）
+        self.back_btn = Button(10, btn_y, 70, 32, "← 返回", self._on_back)
+        self.back_btn.font_size = 16
         
-        # 运行控制
-        self.play_btn = IconButton(self.grid_x + 10, btn_y, btn_size, "▶",
-                                  self._on_play, "运行")
-        self.pause_btn = IconButton(self.grid_x + 60, btn_y, btn_size, "⏸",
-                                   self._on_pause, "暂停")
-        self.reset_btn = IconButton(self.grid_x + 110, btn_y, btn_size, "↺",
-                                   self._on_reset, "重置")
+        # 运行控制按钮组
+        self.play_btn = IconButton(0, btn_y, btn_size, "▶", self._on_play, "运行")
+        self.pause_btn = IconButton(0, btn_y, btn_size, "⏸", self._on_pause, "暂停")
+        self.reset_btn = IconButton(0, btn_y, btn_size, "↺", self._on_reset, "重置")
         
         # 速度控制
-        self.speed_label = Label(self.grid_x + 170, btn_y + 12, "速度: 1x", font_size=18)
-        self.speed_down_btn = IconButton(self.grid_x + 250, btn_y, 35, "-",
-                                        self._speed_down, "减速")
-        self.speed_up_btn = IconButton(self.grid_x + 290, btn_y, 35, "+",
-                                      self._speed_up, "加速")
+        self.speed_label = Label(0, btn_y + 10, "1x", font_size=16)
+        self.speed_down_btn = IconButton(0, btn_y, 30, "-", self._speed_down, "减速")
+        self.speed_up_btn = IconButton(0, btn_y, 30, "+", self._speed_up, "加速")
         
-        # 工具按钮
-        self.code_btn = Button(self.grid_x + 350, btn_y, 80, 35, "代码",
-                              self._toggle_code_editor)
-        self.code_btn.font_size = 18
+        # 工具按钮（简化）
+        self.code_btn = Button(0, btn_y, 60, 32, "代码", self._toggle_code_editor)
+        self.code_btn.font_size = 16
         
-        self.hint_btn = Button(self.grid_x + 440, btn_y, 80, 35, "提示",
-                              self._toggle_hints)
-        self.hint_btn.font_size = 18
+        self.hint_btn = Button(0, btn_y, 60, 32, "提示", self._toggle_hints)
+        self.hint_btn.font_size = 16
         
-        self.save_btn = Button(self.grid_x + 530, btn_y, 100, 35, "保存蓝图",
-                              self._save_blueprint)
-        self.save_btn.font_size = 18
+        self.save_btn = Button(0, btn_y, 60, 32, "保存", self._save_blueprint)
+        self.save_btn.font_size = 16
         
-        self.help_btn = Button(self.grid_x + 640, btn_y, 60, 35, "?帮助",
-                              self._show_tutorial)
-        self.help_btn.font_size = 18
+        self.help_btn = Button(0, btn_y, 40, 32, "?", self._show_tutorial)
+        self.help_btn.font_size = 16
         
         self.control_buttons = [
             self.back_btn, self.play_btn, self.pause_btn, self.reset_btn,
             self.speed_down_btn, self.speed_up_btn,
             self.code_btn, self.hint_btn, self.save_btn, self.help_btn
         ]
+        
+        # 立即更新按钮位置
+        self._update_button_positions()
+    
+    def _update_layout(self):
+        """更新布局（当分割条拖动或窗口大小变化时调用）"""
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
+        
+        self.grid_x = self.code_panel_width + 15
+        self.grid_y = 60
+        available_width = w - self.code_panel_width - self.hint_panel_width - 30
+        self.grid_width = min(GRID_COLS * GRID_SIZE, available_width)
+        self.grid_height = min(GRID_ROWS * GRID_SIZE, h - 100)
+    
+    def on_resize(self, width: int, height: int):
+        """窗口大小变化时更新布局"""
+        # 更新代码编辑器高度
+        self.code_editor.height = height - 80
+        
+        # 更新提示面板位置
+        self.hint_panel.x = width - self.hint_panel_width - 10
+        
+        # 更新分割条
+        self.left_splitter.height = height - 80
+        self.right_splitter.height = height - 80
+        self.right_splitter.center_x = width - self.hint_panel_width - 10
+        self.right_splitter.x = self.right_splitter.center_x - 8
+        self.right_splitter.visual_x = self.right_splitter.center_x - 3
+        self.right_splitter.max_pos = width - 150
+        self.right_splitter.min_pos = width - 400
+        
+        # 更新布局
+        self._update_layout()
+        self._update_button_positions()
+    
+    def _on_left_splitter_drag(self, new_x: int):
+        """左分割条拖动回调"""
+        self.code_panel_width = new_x
+        self._update_layout()
+        # 更新代码编辑器大小
+        self.code_editor.width = self.code_panel_width - 20
+        self.code_editor.x = 10
+        # 更新控制按钮位置
+        self._update_button_positions()
+    
+    def _on_right_splitter_drag(self, new_x: int):
+        """右分割条拖动回调"""
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        self.hint_panel_width = w - new_x - 10
+        self._update_layout()
+        # 更新提示面板位置和大小
+        self.hint_panel.x = new_x + 10
+        self.hint_panel.width = self.hint_panel_width
+        # 更新右分割条位置
+        self.right_splitter.x = new_x
+    
+    def _update_button_positions(self):
+        """更新控制按钮位置 - 紧凑布局"""
+        x = self.grid_x + 5
+        gap = 5
+        
+        # 运行控制
+        self.play_btn.x = x
+        x += self.play_btn.width + gap
+        self.pause_btn.x = x
+        x += self.pause_btn.width + gap
+        self.reset_btn.x = x
+        x += self.reset_btn.width + gap + 10
+        
+        # 速度控制
+        self.speed_down_btn.x = x
+        x += self.speed_down_btn.width + 2
+        self.speed_label.x = x
+        x += 25
+        self.speed_up_btn.x = x
+        x += self.speed_up_btn.width + gap + 10
+        
+        # 工具按钮
+        self.code_btn.x = x
+        x += self.code_btn.width + gap
+        self.hint_btn.x = x
+        x += self.hint_btn.width + gap
+        self.save_btn.x = x
+        x += self.save_btn.width + gap
+        self.help_btn.x = x
     
     def _load_level_info(self):
         if game_engine.current_level:
@@ -591,6 +711,16 @@ source.connect(output)
             if tutorial.handle_event(event):
                 return
         
+        # 处理分割条事件（优先级最高）
+        # 先让两个分割条都处理MOUSEMOTION以更新hover状态
+        left_handled = self.left_splitter.handle_event(event)
+        right_handled = self.right_splitter.handle_event(event)
+        
+        # 如果分割条正在拖动，阻止其他处理
+        if left_handled or right_handled:
+            if self.left_splitter.dragging or self.right_splitter.dragging:
+                return
+        
         # 处理UI元素事件（代码编辑器优先）
         self.code_editor.handle_event(event)
         self.hint_panel.handle_event(event)
@@ -729,6 +859,10 @@ source.connect(output)
         # 绘制UI（代码驱动模式）
         self.code_editor.draw(surface)
         self.hint_panel.draw(surface)
+        
+        # 绘制分割条
+        self.left_splitter.draw(surface)
+        self.right_splitter.draw(surface)
         
         for btn in self.control_buttons:
             btn.draw(surface)
@@ -870,17 +1004,24 @@ class AchievementsScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self._create_ui()
+    
+    def _create_ui(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
         self.back_btn = Button(20, 20, 100, 40, "← 返回",
                               lambda: self.game.switch_scene('menu'))
         self.back_btn.font_size = 20
         
-        self.title = Label(WINDOW_WIDTH // 2, 50, "成就",
+        self.title = Label(w // 2, 50, "成就",
                           font_size=48, color=COLORS['accent'], centered=True)
         
-        self.achievement_panel = ScrollPanel(50, 100, WINDOW_WIDTH - 100, 
-                                            WINDOW_HEIGHT - 150, "")
+        self.achievement_panel = ScrollPanel(50, 100, w - 100, h - 150, "")
         self._load_achievements()
+    
+    def on_resize(self, width: int, height: int):
+        self._create_ui()
     
     def _load_achievements(self):
         achievements = game_engine.get_user_achievements()
@@ -938,17 +1079,24 @@ class BlueprintsScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self._create_ui()
+    
+    def _create_ui(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
         self.back_btn = Button(20, 20, 100, 40, "← 返回",
                               lambda: self.game.switch_scene('menu'))
         self.back_btn.font_size = 20
         
-        self.title = Label(WINDOW_WIDTH // 2, 50, "我的蓝图",
+        self.title = Label(w // 2, 50, "我的蓝图",
                           font_size=48, color=COLORS['accent'], centered=True)
         
-        self.blueprint_panel = ScrollPanel(50, 100, WINDOW_WIDTH - 100,
-                                          WINDOW_HEIGHT - 150, "")
+        self.blueprint_panel = ScrollPanel(50, 100, w - 100, h - 150, "")
         self._load_blueprints()
+    
+    def on_resize(self, width: int, height: int):
+        self._create_ui()
     
     def _load_blueprints(self):
         if not game_engine.current_user:
@@ -1027,17 +1175,24 @@ class HelpScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self._create_ui()
+    
+    def _create_ui(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
         self.back_btn = Button(20, 20, 100, 40, "← 返回",
                               lambda: self.game.switch_scene('menu'))
         self.back_btn.font_size = 20
         
-        self.title = Label(WINDOW_WIDTH // 2, 50, "帮助",
+        self.title = Label(w // 2, 50, "帮助",
                           font_size=48, color=COLORS['accent'], centered=True)
         
-        self.help_panel = ScrollPanel(50, 100, WINDOW_WIDTH - 100,
-                                     WINDOW_HEIGHT - 150, "")
+        self.help_panel = ScrollPanel(50, 100, w - 100, h - 150, "")
         self._create_help_content()
+    
+    def on_resize(self, width: int, height: int):
+        self._create_ui()
     
     def _create_help_content(self):
         content = [
@@ -1117,17 +1272,25 @@ class DemoScene(GameScene):
     
     def __init__(self, game: 'PyFactoryGame'):
         super().__init__(game)
+        self._init_layout()
+        self._init_demo()
+    
+    def _init_layout(self):
+        w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
         # 网格区域（右侧）
-        self.grid_x = 450
+        self.grid_x = min(450, w // 3)
         self.grid_y = 100
-        self.grid_width = GRID_COLS * GRID_SIZE
-        self.grid_height = GRID_ROWS * GRID_SIZE
+        self.grid_width = min(GRID_COLS * GRID_SIZE, w - self.grid_x - 50)
+        self.grid_height = min(GRID_ROWS * GRID_SIZE, h - 200)
         
         # 返回按钮
         self.back_btn = Button(20, 20, 100, 40, "← 返回",
                               lambda: self.game.switch_scene('menu'))
         self.back_btn.font_size = 20
+    
+    def _init_demo(self):
         
         # 创建演示工厂
         self.factory = Factory()
@@ -1195,16 +1358,24 @@ class DemoScene(GameScene):
         ]
         
         self._apply_step(0)
+        self._create_buttons()
+    
+    def _create_buttons(self):
+        h = self.game.window_height if hasattr(self.game, 'window_height') else WINDOW_HEIGHT
         
         # 控制按钮
-        self.prev_btn = Button(20, WINDOW_HEIGHT - 70, 100, 45, "← 上一步", self._prev_step)
+        self.prev_btn = Button(20, h - 70, 100, 45, "← 上一步", self._prev_step)
         self.prev_btn.font_size = 18
-        self.next_btn = Button(130, WINDOW_HEIGHT - 70, 100, 45, "下一步 →", self._next_step,
+        self.next_btn = Button(130, h - 70, 100, 45, "下一步 →", self._next_step,
                               color=COLORS['success'])
         self.next_btn.font_size = 18
-        self.run_btn = Button(250, WINDOW_HEIGHT - 70, 100, 45, "▶ 运行", self._toggle_run,
+        self.run_btn = Button(250, h - 70, 100, 45, "▶ 运行", self._toggle_run,
                              color=COLORS['accent'])
         self.run_btn.font_size = 18
+    
+    def on_resize(self, width: int, height: int):
+        self._init_layout()
+        self._create_buttons()
         
     def _apply_step(self, step_idx: int):
         """应用指定步骤的工厂配置"""
@@ -1454,7 +1625,15 @@ class PyFactoryGame:
         pygame.init()
         pygame.display.set_caption(WINDOW_TITLE)
         
-        self.screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        # 可缩放窗口
+        self.window_width = WINDOW_WIDTH
+        self.window_height = WINDOW_HEIGHT
+        self.min_width = 1024
+        self.min_height = 600
+        self.screen = pygame.display.set_mode(
+            (self.window_width, self.window_height),
+            pygame.RESIZABLE
+        )
         self.clock = pygame.time.Clock()
         self.running = True
         
@@ -1500,8 +1679,28 @@ class PyFactoryGame:
                 self.running = False
                 return
             
+            # 处理窗口大小变化
+            if event.type == pygame.VIDEORESIZE:
+                self._on_resize(event.w, event.h)
+                continue
+            
             if self.current_scene:
                 self.current_scene.handle_event(event)
+    
+    def _on_resize(self, width: int, height: int):
+        """处理窗口大小变化"""
+        # 限制最小尺寸
+        width = max(self.min_width, width)
+        height = max(self.min_height, height)
+        
+        self.window_width = width
+        self.window_height = height
+        self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
+        
+        # 通知所有场景更新布局
+        for scene in self.scenes.values():
+            if hasattr(scene, 'on_resize'):
+                scene.on_resize(width, height)
     
     def update(self, dt: float):
         toast.update(dt)

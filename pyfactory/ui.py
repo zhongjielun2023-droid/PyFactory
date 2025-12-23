@@ -462,98 +462,239 @@ class CodeEditor(Panel):
         self.cursor_line = 0
         self.cursor_col = 0
         self.focused = False
-        self.scroll_offset = 0
+        self.scroll_y = 0  # 垂直滚动
+        self.scroll_x = 0  # 水平滚动
         self.line_height = 22
         self.font = None
         self.on_change = on_change  # 代码变化回调
         self.error_line = -1  # 错误行号
         self.error_msg = ""  # 错误信息
-        self._last_sent_code = None  # 用于避免在光标键等无文本变动时重复触发回调
         
     def set_code(self, code: str):
         self.code = code
         self.lines = code.split('\n') if code else [""]
         self.cursor_line = 0
         self.cursor_col = 0
+        self.scroll_x = 0
+        self.scroll_y = 0
     
     def get_code(self) -> str:
         return '\n'.join(self.lines)
+    
+    def _ensure_cursor_visible(self):
+        """确保光标在可见区域内"""
+        # 垂直滚动
+        visible_lines = (self.height - 50) // self.line_height
+        if self.cursor_line < self.scroll_y // self.line_height:
+            self.scroll_y = self.cursor_line * self.line_height
+        elif self.cursor_line >= self.scroll_y // self.line_height + visible_lines:
+            self.scroll_y = (self.cursor_line - visible_lines + 1) * self.line_height
+        
+        # 水平滚动 - 使用实际文本宽度
+        code_area_width = self.width - 55  # 减去行号宽度和边距
+        line = self.lines[self.cursor_line] if self.cursor_line < len(self.lines) else ""
+        cursor_x = self._get_text_width(line[:self.cursor_col])
+        if cursor_x < self.scroll_x:
+            self.scroll_x = max(0, cursor_x - 20)
+        elif cursor_x > self.scroll_x + code_area_width - 20:
+            self.scroll_x = cursor_x - code_area_width + 40
+    
+    def _get_cursor_col_from_x(self, line: str, click_x: int) -> int:
+        """根据点击x坐标计算光标列位置"""
+        if not line:
+            return 0
+        # 二分查找最接近的字符位置
+        for i in range(len(line) + 1):
+            char_x = self._get_text_width(line[:i])
+            if char_x >= click_x:
+                # 判断更接近哪个位置
+                if i > 0:
+                    prev_x = self._get_text_width(line[:i-1])
+                    if click_x - prev_x < char_x - click_x:
+                        return i - 1
+                return i
+        return len(line)
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
             return False
         
         if event.type == pygame.MOUSEBUTTONDOWN:
+            was_focused = self.focused
             self.focused = self.contains_point(*event.pos)
             if self.focused:
                 # 计算点击位置对应的行列
-                click_y = event.pos[1] - self.y - 40 + self.scroll_offset
+                click_y = event.pos[1] - self.y - 40 + self.scroll_y
+                click_x = event.pos[0] - self.x - 50 + self.scroll_x
                 self.cursor_line = min(max(0, click_y // self.line_height), 
                                        len(self.lines) - 1)
+                line = self.lines[self.cursor_line]
+                self.cursor_col = self._get_cursor_col_from_x(line, click_x)
                 return True
         
+        # 使用 TEXTINPUT 事件处理文本输入（支持输入法）
+        if event.type == pygame.TEXTINPUT and self.focused:
+            self._save_undo_state()  # 保存撤回状态
+            current = self.lines[self.cursor_line]
+            self.lines[self.cursor_line] = current[:self.cursor_col] + event.text + current[self.cursor_col:]
+            self.cursor_col += len(event.text)
+            self._ensure_cursor_visible()
+            if self.on_change:
+                self.on_change(self.get_code())
+            return True
+        
         if event.type == pygame.KEYDOWN and self.focused:
+            handled = False
+            
+            # Ctrl+Z 撤回
+            if event.key == pygame.K_z and event.mod & pygame.KMOD_CTRL:
+                if event.mod & pygame.KMOD_SHIFT:
+                    # Ctrl+Shift+Z 重做
+                    self.redo()
+                else:
+                    self.undo()
+                return True
+            
+            # Ctrl+Y 重做
+            if event.key == pygame.K_y and event.mod & pygame.KMOD_CTRL:
+                self.redo()
+                return True
+            
+            # 保存撤回状态（在修改前）
+            if event.key in (pygame.K_RETURN, pygame.K_BACKSPACE, pygame.K_DELETE, pygame.K_TAB):
+                self._save_undo_state()
+            
             if event.key == pygame.K_RETURN:
-                # 换行
                 current = self.lines[self.cursor_line]
+                # 自动缩进
+                indent = ""
+                for char in current:
+                    if char in ' \t':
+                        indent += char
+                    else:
+                        break
                 self.lines[self.cursor_line] = current[:self.cursor_col]
-                self.lines.insert(self.cursor_line + 1, current[self.cursor_col:])
+                self.lines.insert(self.cursor_line + 1, indent + current[self.cursor_col:])
                 self.cursor_line += 1
-                self.cursor_col = 0
+                self.cursor_col = len(indent)
+                handled = True
             elif event.key == pygame.K_BACKSPACE:
                 if self.cursor_col > 0:
                     current = self.lines[self.cursor_line]
                     self.lines[self.cursor_line] = current[:self.cursor_col-1] + current[self.cursor_col:]
                     self.cursor_col -= 1
                 elif self.cursor_line > 0:
-                    # 合并到上一行
                     prev_len = len(self.lines[self.cursor_line - 1])
                     self.lines[self.cursor_line - 1] += self.lines[self.cursor_line]
                     self.lines.pop(self.cursor_line)
                     self.cursor_line -= 1
                     self.cursor_col = prev_len
+                handled = True
+            elif event.key == pygame.K_DELETE:
+                current = self.lines[self.cursor_line]
+                if self.cursor_col < len(current):
+                    self.lines[self.cursor_line] = current[:self.cursor_col] + current[self.cursor_col+1:]
+                elif self.cursor_line < len(self.lines) - 1:
+                    self.lines[self.cursor_line] += self.lines[self.cursor_line + 1]
+                    self.lines.pop(self.cursor_line + 1)
+                handled = True
             elif event.key == pygame.K_LEFT:
-                if self.cursor_col > 0:
+                if event.mod & pygame.KMOD_CTRL:
+                    # Ctrl+Left: 跳到单词开头
+                    self._move_word_left()
+                elif self.cursor_col > 0:
                     self.cursor_col -= 1
+                elif self.cursor_line > 0:
+                    self.cursor_line -= 1
+                    self.cursor_col = len(self.lines[self.cursor_line])
+                handled = True
             elif event.key == pygame.K_RIGHT:
-                if self.cursor_col < len(self.lines[self.cursor_line]):
+                if event.mod & pygame.KMOD_CTRL:
+                    # Ctrl+Right: 跳到单词结尾
+                    self._move_word_right()
+                elif self.cursor_col < len(self.lines[self.cursor_line]):
                     self.cursor_col += 1
+                elif self.cursor_line < len(self.lines) - 1:
+                    self.cursor_line += 1
+                    self.cursor_col = 0
+                handled = True
             elif event.key == pygame.K_UP:
                 if self.cursor_line > 0:
                     self.cursor_line -= 1
                     self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_line]))
+                handled = True
             elif event.key == pygame.K_DOWN:
                 if self.cursor_line < len(self.lines) - 1:
                     self.cursor_line += 1
                     self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_line]))
+                handled = True
+            elif event.key == pygame.K_HOME:
+                if event.mod & pygame.KMOD_CTRL:
+                    self.cursor_line = 0
+                self.cursor_col = 0
+                handled = True
+            elif event.key == pygame.K_END:
+                if event.mod & pygame.KMOD_CTRL:
+                    self.cursor_line = len(self.lines) - 1
+                self.cursor_col = len(self.lines[self.cursor_line])
+                handled = True
             elif event.key == pygame.K_TAB:
-                # 插入4个空格
                 current = self.lines[self.cursor_line]
                 self.lines[self.cursor_line] = current[:self.cursor_col] + "    " + current[self.cursor_col:]
                 self.cursor_col += 4
-            elif event.unicode and event.unicode.isprintable():
-                current = self.lines[self.cursor_line]
-                self.lines[self.cursor_line] = current[:self.cursor_col] + event.unicode + current[self.cursor_col:]
-                self.cursor_col += 1
+                handled = True
             
-            # 仅在内容真实改变时触发代码变化回调（避免箭头键等仅移动光标导致触发）
+            # 触发代码变化回调
             if self.on_change:
-                current_code = self.get_code()
-                if current_code != self._last_sent_code:
-                    try:
-                        self.on_change(current_code)
-                    finally:
-                        self._last_sent_code = current_code
+                self.on_change(self.get_code())
             
             return True
         
         if event.type == pygame.MOUSEWHEEL and self.focused:
-            self.scroll_offset -= event.y * self.line_height * 2
-            max_scroll = max(0, len(self.lines) * self.line_height - (self.height - 50))
-            self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
+            if event.mod & pygame.KMOD_SHIFT:
+                # Shift+滚轮: 水平滚动
+                self.scroll_x -= event.y * 30
+                self.scroll_x = max(0, self.scroll_x)
+            else:
+                # 普通滚轮: 垂直滚动
+                self.scroll_y -= event.y * self.line_height * 2
+                max_scroll = max(0, len(self.lines) * self.line_height - (self.height - 50))
+                self.scroll_y = max(0, min(self.scroll_y, max_scroll))
             return True
         
         return super().handle_event(event)
+    
+    def _move_word_left(self):
+        """移动到上一个单词"""
+        line = self.lines[self.cursor_line]
+        if self.cursor_col == 0:
+            if self.cursor_line > 0:
+                self.cursor_line -= 1
+                self.cursor_col = len(self.lines[self.cursor_line])
+            return
+        
+        col = self.cursor_col - 1
+        while col > 0 and not line[col-1].isalnum():
+            col -= 1
+        while col > 0 and line[col-1].isalnum():
+            col -= 1
+        self.cursor_col = col
+    
+    def _move_word_right(self):
+        """移动到下一个单词"""
+        line = self.lines[self.cursor_line]
+        if self.cursor_col >= len(line):
+            if self.cursor_line < len(self.lines) - 1:
+                self.cursor_line += 1
+                self.cursor_col = 0
+            return
+        
+        col = self.cursor_col
+        while col < len(line) and line[col].isalnum():
+            col += 1
+        while col < len(line) and not line[col].isalnum():
+            col += 1
+        self.cursor_col = col
     
     def draw(self, surface: pygame.Surface):
         if not self.visible:
@@ -565,49 +706,57 @@ class CodeEditor(Panel):
         super().draw(surface)
         
         # 代码区域
-        code_rect = pygame.Rect(self.x + 5, self.y + 40, 
-                               self.width - 10, self.height - 50)
+        line_num_width = 40
+        code_area_x = self.x + 5 + line_num_width
+        code_rect = pygame.Rect(code_area_x, self.y + 40, 
+                               self.width - 10 - line_num_width, self.height - 50)
         
         # 绘制行号背景
-        line_num_width = 35
         pygame.draw.rect(surface, COLORS['button_normal'],
                         (self.x + 5, self.y + 40, line_num_width, self.height - 50))
         
-        # 裁剪区域
-        surface.set_clip(code_rect)
-        
         # 绘制代码行
         for i, line in enumerate(self.lines):
-            y = self.y + 45 + i * self.line_height - self.scroll_offset
+            y = self.y + 45 + i * self.line_height - self.scroll_y
             
             if y < self.y + 35 or y > self.y + self.height - 10:
                 continue
             
-            # 行号
-            line_num = self.font.render(str(i + 1), True, COLORS['text_secondary'])
+            # 行号（不受水平滚动影响）
+            line_num = self.font.render(f"{i + 1:3}", True, COLORS['text_secondary'])
             surface.blit(line_num, (self.x + 8, y))
             
             # 高亮错误行
             if i == self.error_line:
                 error_rect = pygame.Rect(
-                    self.x + line_num_width + 5, y - 2,
+                    code_area_x, y - 2,
                     self.width - line_num_width - 15, self.line_height
                 )
                 pygame.draw.rect(surface, (80, 30, 30), error_rect)
             # 高亮当前行
             elif i == self.cursor_line and self.focused:
                 highlight_rect = pygame.Rect(
-                    self.x + line_num_width + 5, y - 2,
+                    code_area_x, y - 2,
                     self.width - line_num_width - 15, self.line_height
                 )
                 pygame.draw.rect(surface, COLORS['button_hover'], highlight_rect)
+        
+        # 裁剪代码区域（支持水平滚动）
+        surface.set_clip(code_rect)
+        
+        for i, line in enumerate(self.lines):
+            y = self.y + 45 + i * self.line_height - self.scroll_y
             
-            # 代码文本（简单的语法高亮）
-            self._draw_code_line(surface, line, self.x + line_num_width + 10, y)
+            if y < self.y + 35 or y > self.y + self.height - 10:
+                continue
+            
+            # 代码文本（带水平滚动）
+            code_x = code_area_x + 5 - self.scroll_x
+            self._draw_code_line(surface, line, code_x, y)
             
             # 光标
             if i == self.cursor_line and self.focused:
-                cursor_x = self.x + line_num_width + 10
+                cursor_x = code_area_x + 5 - self.scroll_x
                 if self.cursor_col > 0:
                     prefix = self.font.render(line[:self.cursor_col], True, COLORS['text'])
                     cursor_x += prefix.get_width()
@@ -615,6 +764,11 @@ class CodeEditor(Panel):
                                (cursor_x, y), (cursor_x, y + self.line_height - 4), 2)
         
         surface.set_clip(None)
+        
+        # 绘制水平滚动指示器
+        if self.scroll_x > 0:
+            indicator = self.font.render("◀", True, COLORS['accent'])
+            surface.blit(indicator, (code_area_x + 2, self.y + self.height - 20))
     
     def _draw_code_line(self, surface: pygame.Surface, line: str, x: int, y: int):
         """绘制代码行（简单语法高亮）"""
@@ -1039,6 +1193,122 @@ class TutorialOverlay:
         nav_surface = hint_font.render(nav_text, True, COLORS['text_secondary'])
         surface.blit(nav_surface, (dialog_x + dialog_width - nav_surface.get_width() - 20, 
                                    dialog_y + dialog_height - 35))
+
+
+class Splitter(UIElement):
+    """可拖动分割条 - 用于调整面板大小"""
+    
+    def __init__(self, x: int, y: int, length: int, orientation: str = 'vertical',
+                 min_pos: int = 100, max_pos: int = 500, on_drag: Callable = None):
+        """
+        orientation: 'vertical' (左右分割) 或 'horizontal' (上下分割)
+        """
+        # 使用更宽的点击区域
+        self.visual_width = 6  # 可视宽度
+        self.hit_width = 16    # 点击检测宽度
+        
+        if orientation == 'vertical':
+            super().__init__(x - self.hit_width // 2, y, self.hit_width, length)
+            self.visual_x = x - self.visual_width // 2
+        else:
+            super().__init__(x, y - self.hit_width // 2, length, self.hit_width)
+            self.visual_y = y - self.visual_width // 2
+        
+        self.orientation = orientation
+        self.min_pos = min_pos
+        self.max_pos = max_pos
+        self.on_drag = on_drag
+        self.dragging = False
+        self.drag_offset = 0
+        self.center_x = x  # 中心位置
+        self.center_y = y
+        
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if not self.visible:
+            return False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.contains_point(*event.pos):
+                self.dragging = True
+                if self.orientation == 'vertical':
+                    self.drag_offset = event.pos[0] - self.center_x
+                else:
+                    self.drag_offset = event.pos[1] - self.center_y
+                return True
+        
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if self.dragging:
+                self.dragging = False
+                return True
+        
+        elif event.type == pygame.MOUSEMOTION:
+            # 更新hover状态
+            self.hovered = self.contains_point(*event.pos)
+            
+            if self.dragging:
+                if self.orientation == 'vertical':
+                    new_x = event.pos[0] - self.drag_offset
+                    new_x = max(self.min_pos, min(self.max_pos, new_x))
+                    self.center_x = new_x
+                    self.x = new_x - self.hit_width // 2
+                    self.visual_x = new_x - self.visual_width // 2
+                    if self.on_drag:
+                        self.on_drag(new_x)
+                else:
+                    new_y = event.pos[1] - self.drag_offset
+                    new_y = max(self.min_pos, min(self.max_pos, new_y))
+                    self.center_y = new_y
+                    self.y = new_y - self.hit_width // 2
+                    self.visual_y = new_y - self.visual_width // 2
+                    if self.on_drag:
+                        self.on_drag(new_y)
+                return True
+        
+        return False
+    
+    def draw(self, surface: pygame.Surface):
+        if not self.visible:
+            return
+        
+        # 分割条颜色
+        if self.dragging:
+            color = COLORS['accent']
+            bg_alpha = 80
+        elif self.hovered:
+            color = COLORS['accent']
+            bg_alpha = 40
+        else:
+            color = COLORS['panel_border']
+            bg_alpha = 0
+        
+        # 绘制hover/drag背景
+        if bg_alpha > 0:
+            bg_rect = self.get_rect()
+            bg_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(bg_surface, (*COLORS['accent'][:3], bg_alpha), 
+                           bg_surface.get_rect(), border_radius=4)
+            surface.blit(bg_surface, bg_rect.topleft)
+        
+        # 绘制可视分割线
+        if self.orientation == 'vertical':
+            visual_rect = pygame.Rect(self.visual_x, self.y, self.visual_width, self.height)
+        else:
+            visual_rect = pygame.Rect(self.x, self.visual_y, self.width, self.visual_width)
+        pygame.draw.rect(surface, color, visual_rect, border_radius=2)
+        
+        # 绘制拖动手柄（中间的点）
+        if self.orientation == 'vertical':
+            center_x = self.visual_x + self.visual_width // 2
+            for i in range(-2, 3):
+                dot_y = self.y + self.height // 2 + i * 12
+                pygame.draw.circle(surface, COLORS['text'] if self.hovered else COLORS['text_secondary'], 
+                                 (center_x, dot_y), 3)
+        else:
+            center_y = self.visual_y + self.visual_width // 2
+            for i in range(-2, 3):
+                dot_x = self.x + self.width // 2 + i * 12
+                pygame.draw.circle(surface, COLORS['text'] if self.hovered else COLORS['text_secondary'],
+                                 (dot_x, center_y), 3)
 
 
 # 全局Toast实例
