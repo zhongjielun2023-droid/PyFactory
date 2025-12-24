@@ -8,11 +8,10 @@ import math
 from typing import Optional, List, Dict, Any, Callable, Tuple
 from abc import ABC, abstractmethod
 from shapes import Shape, ShapePackage, ShapeDict, create_shape
-from config import COLORS, MACHINE_TYPES, GRID_SIZE
+from config import COLORS, MACHINE_TYPES, GRID_SIZE, DEBUG
 from fonts import get_font
 
-# 调试开关：在发布时设为 False
-DEBUG = False
+# DEBUG由 config.DEBUG 提供
 
 
 class Connection:

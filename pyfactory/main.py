@@ -17,9 +17,8 @@ from typing import Optional, List, Dict, Any
 from config import (
     WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, FPS,
     COLORS, GRID_SIZE, GRID_COLS, GRID_ROWS,
-    MACHINE_TYPES, LEVEL_CATEGORIES
+    MACHINE_TYPES, LEVEL_CATEGORIES, STAR_FULL, STAR_EMPTY, DEBUG
 )
-from config import STAR_FULL, STAR_EMPTY
 from shapes import Shape, create_shape, create_random_shape
 from machines import Machine, create_machine, SourceMachine, OutputMachine
 from game_engine import game_engine, code_executor, Factory, Level
@@ -33,6 +32,8 @@ from ui import (
 from ui import clear_tooltip
 from fonts import get_font
 from code_parser import parser as code_parser, get_template
+
+# DEBUG is provided by config.DEBUG
 
 
 class GameScene:
@@ -617,8 +618,9 @@ source.connect(output)
         # 使用工厂的 clear() 方法以确保 grid 等内部结构也被清理
         factory.clear()
 
-        # 调试输出，便于定位解析与构建问题
-        print(f"[DEBUG] _on_code_change: code lines={len(code.splitlines())}, machines_parsed={len(machines)}, connections_parsed={len(connections)}")
+        if DEBUG:
+            # 调试输出，便于定位解析与构建问题
+            print(f"[DEBUG] _on_code_change: code lines={len(code.splitlines())}, machines_parsed={len(machines)}, connections_parsed={len(connections)}")
         
         # 根据解析结果创建机器
         machine_objects = []
@@ -656,7 +658,8 @@ source.connect(output)
                     for m in factory.machines:
                         if isinstance(m, OutputMachine):
                             m.set_target(target_shape, required)
-                            print(f"[DEBUG] _on_code_change: set target on OutputMachine at ({m.x},{m.y}) -> {target_shape!r}, count={required}")
+                            if DEBUG:
+                                print(f"[DEBUG] _on_code_change: set target on OutputMachine at ({m.x},{m.y}) -> {target_shape!r}, count={required}")
         except Exception as e:
             print(f"[DEBUG] _on_code_change: failed to set output target: {e}")
     
@@ -847,6 +850,33 @@ source.connect(output)
                     _pygame.draw.rect(surface, (120, 20, 20), _pygame.Rect(rx, ry, GRID_SIZE-8, GRID_SIZE-8))
                 except Exception:
                     pass
+
+            # 回退绘制：如果机器自身没有绘制其预览，则在此确保 Source/Painter 的可视化
+            try:
+                cx = machine.x * GRID_SIZE + self.grid_x + GRID_SIZE // 2
+                cy = machine.y * GRID_SIZE + self.grid_y + GRID_SIZE // 2
+                if getattr(machine, 'machine_type', None) == 'source':
+                    try:
+                        preview = create_shape(getattr(machine, 'shape_type', 'circle'), getattr(machine, 'color', 'white'))
+                        preview.draw(surface, cx, cy, 0.5)
+                    except Exception:
+                        pass
+                elif getattr(machine, 'machine_type', None) == 'painter':
+                    try:
+                        color_key = f"shape_{getattr(machine, 'target_color', 'red')}"
+                        paint_color = COLORS.get(color_key, COLORS.get('shape_white'))
+                        pygame.draw.circle(surface, paint_color, (cx, cy), 12)
+                        pygame.draw.circle(surface, COLORS['text'], (cx, cy), 12, 2)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # 机器标签
+            try:
+                self._draw_machine_label(surface, machine)
+            except Exception:
+                pass
 
         # 绘制连接线（放在机器上层以保证可见）
         for conn in factory.connections:
@@ -1409,9 +1439,10 @@ class DemoScene(GameScene):
         
     def _apply_step(self, step_idx: int):
         """应用指定步骤的工厂配置"""
-        self.factory.machines.clear()
-        self.factory.connections.clear()
-        self.factory.running = False
+        if DEBUG:
+            print(f"[DEBUG] DemoScene._apply_step: step={step_idx} applying")
+        # 使用 Factory.clear() 确保同时清理 grid、machines 和 connections
+        self.factory.clear()
         self.auto_running = False
         
         step = self.steps[step_idx]
@@ -1432,13 +1463,23 @@ class DemoScene(GameScene):
                 m.required_count = 5
             else:
                 continue
-            self.factory.add_machine(m)
+            added = self.factory.add_machine(m)
+            if DEBUG:
+                print(f"[DEBUG] DemoScene._apply_step: created {m.machine_type} at ({m.x},{m.y}) added={added}")
+                if not added:
+                    # 记录为何添加失败（位置冲突）
+                    print(f"[DEBUG] DemoScene._apply_step: add_machine failed at pos=({m.x},{m.y}) existing_grid={self.factory.grid.get((m.x,m.y))}")
             machine_objs.append(m)
         
         # 创建连接
         for from_idx, to_idx in step.get('connections', []):
             if from_idx < len(machine_objs) and to_idx < len(machine_objs):
-                self.factory.connect(machine_objs[from_idx], machine_objs[to_idx])
+                conn = self.factory.connect(machine_objs[from_idx], machine_objs[to_idx])
+                if DEBUG:
+                    print(f"[DEBUG] DemoScene._apply_step: connect {from_idx}->{to_idx} created -> conn={conn is not None}")
+
+        if DEBUG:
+            print(f"[DEBUG] DemoScene._apply_step: final machines={len(self.factory.machines)} grid_keys={list(self.factory.grid.keys())} connections={len(self.factory.connections)}")
     
     def _prev_step(self):
         """上一步"""
@@ -1501,11 +1542,31 @@ class DemoScene(GameScene):
         self._draw_grid(surface)
         
         # 绘制机器（捕获异常）并在失败时绘制占位
+        if DEBUG:
+            print(f"[DEBUG] DemoScene.draw: machines={len(self.factory.machines)}")
         for machine in self.factory.machines:
             try:
+                if DEBUG:
+                    try:
+                        print(f"[DEBUG] DemoScene.draw: machine={getattr(machine,'machine_type',None)} at ({getattr(machine,'x',None)},{getattr(machine,'y',None)})")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                # Only draw debug overlay when DEBUG enabled
+                if DEBUG:
+                    try:
+                        dbg_rx = machine.x * GRID_SIZE + self.grid_x + 2
+                        dbg_ry = machine.y * GRID_SIZE + self.grid_y + 2
+                        dbg_rect = pygame.Rect(dbg_rx, dbg_ry, GRID_SIZE - 4, GRID_SIZE - 4)
+                        pygame.draw.rect(surface, (200, 50, 50), dbg_rect, 2)
+                    except Exception:
+                        pass
                 machine.draw(surface, self.grid_x, self.grid_y)
             except Exception as e:
-                print(f"Demo 绘制机器失败: {e} - {getattr(machine,'machine_type',None)} at ({getattr(machine,'x','?')},{getattr(machine,'y','?')})")
+                if DEBUG:
+                    print(f"Demo 绘制机器失败: {e} - {getattr(machine,'machine_type',None)} at ({getattr(machine,'x','?')},{getattr(machine,'y','?')})")
                 try:
                     import pygame as _pygame
                     rx = machine.x * GRID_SIZE + self.grid_x + 4

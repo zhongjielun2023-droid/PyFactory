@@ -138,7 +138,7 @@ pyfactory/
 
 ## 注意事项
 
-1. 发布时在`machines.py`中将`DEBUG`改为`False`，关闭调试输出
+1. 发布时在`config.py`中将`DEBUG`改为`False`，关闭调试输出
 
 ## 作者
 

@@ -55,6 +55,9 @@ SHAPE_COLORS = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'white', '
 STAR_FULL = '★'
 STAR_EMPTY = '☆'
 
+# 全局调试开关（发布时设为 False）
+DEBUG = False
+
 # 机器类型定义
 MACHINE_TYPES = {
     'source': {'name': '源头', 'desc': '产生基础图形', 'category': 'basic'},
