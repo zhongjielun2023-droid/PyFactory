@@ -27,7 +27,7 @@ from ui import (
     Button, Panel, Label, TextInput, ScrollPanel,
     MachineSelector, CodeEditor, Toast, toast,
     ConfirmDialog, HintPanel, ColorPicker, IconButton,
-    TutorialOverlay, tutorial
+    TutorialOverlay, tutorial, AchievementDialog
 )
 from ui import clear_tooltip
 from fonts import get_font
@@ -441,6 +441,9 @@ class GameScene_(GameScene):
         # 目标显示
         self.target_shape: Optional[Shape] = None
         
+        # 成就对话框
+        self.achievement_dialog: Optional[AchievementDialog] = None
+        
         # 加载当前关卡信息
         self._load_level_info()
     
@@ -673,6 +676,18 @@ source.connect(output)
                 self.selected_machine.color = color
                 toast.show(f"源头颜色设置为: {color}")
     
+    def _on_achievement_auto_action(self):
+        """成就对话框自动触发返回回调"""
+        # 关闭对话框并返回到关卡选择页面
+        self.achievement_dialog = None
+        self._on_back()
+    
+    def _on_achievement_confirm(self):
+        """成就对话框确定按钮回调"""
+        # 关闭对话框并返回到关卡选择页面
+        self.achievement_dialog = None
+        self._on_back()
+    
     def _on_back(self):
         game_engine.stop_factory()
         if game_engine.mode == 'playing':
@@ -749,6 +764,10 @@ source.connect(output)
         self.code_editor.handle_event(event)
         self.hint_panel.handle_event(event)
         
+        # 处理成就对话框事件
+        if self.achievement_dialog:
+            self.achievement_dialog.handle_event(event)
+        
         for btn in self.control_buttons:
             btn.handle_event(event)
         
@@ -821,12 +840,23 @@ source.connect(output)
     def update(self, dt: float):
         game_engine.update(dt)
         
+        # 更新成就对话框
+        if self.achievement_dialog:
+            self.achievement_dialog.update(dt)
+        
         # 检查关卡完成
-        if game_engine.mode == 'playing' and game_engine.current_level:
+        if game_engine.mode == 'playing' and game_engine.current_level and not self.achievement_dialog:
             if game_engine.current_level.is_completed:
                 stars = game_engine.current_level.calculate_stars()
                 stars_str = STAR_FULL * stars if stars > 0 else '无'
-                toast.show(f"关卡完成！获得 {stars} 星 {stars_str}", 'success')
+                # 显示成就对话框
+                self.achievement_dialog = AchievementDialog(
+                    "关卡完成！", 
+                    "恭喜你成功完成了关卡！", 
+                    stars,
+                    self._on_achievement_auto_action,
+                    self._on_achievement_confirm
+                )
                 game_engine.stop_factory()
     
     def draw(self, surface: pygame.Surface):
@@ -911,6 +941,10 @@ source.connect(output)
         # 绘制UI（代码驱动模式）
         self.code_editor.draw(surface)
         self.hint_panel.draw(surface)
+        
+        # 绘制成就对话框
+        if self.achievement_dialog:
+            self.achievement_dialog.draw(surface)
         
         # 绘制分割条
         self.left_splitter.draw(surface)

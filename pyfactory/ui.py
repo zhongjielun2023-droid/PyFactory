@@ -7,7 +7,7 @@ import pygame
 from typing import Optional, List, Dict, Any, Tuple, Callable
 from config import (
     COLORS, WINDOW_WIDTH, WINDOW_HEIGHT, GRID_SIZE,
-    MACHINE_TYPES, LEVEL_CATEGORIES, SHAPE_COLORS
+    MACHINE_TYPES, LEVEL_CATEGORIES, SHAPE_COLORS, STAR_FULL
 )
 from fonts import get_font
 
@@ -1135,6 +1135,51 @@ class HintPanel(Panel):
         # 重置到第一页，下次打开时从头开始
         self.current_hint = 0
         self._update_display()
+
+
+class AchievementDialog(Panel):
+    """成就对话框"""
+    
+    def __init__(self, title: str, message: str, stars: int, on_auto_action: Callable = None, on_close: Callable = None):
+        width, height = 400, 200
+        x = (WINDOW_WIDTH - width) // 2
+        y = (WINDOW_HEIGHT - height) // 2
+        super().__init__(x, y, width, height, title)
+        
+        self.message = message
+        self.stars = stars
+        self.on_auto_action = on_auto_action
+        self.on_close = on_close
+        self.timer = 0.0
+        self.auto_action_delay = 2.0  # 2秒后自动触发返回
+        
+        # 消息标签
+        msg_label = Label(x + width // 2, y + 60, message, 
+                         font_size=24, centered=True)
+        self.add_child(msg_label)
+        
+        # 星星显示
+        stars_str = STAR_FULL * stars if stars > 0 else '无'
+        stars_label = Label(x + width // 2, y + 100, f"获得 {stars} 星 {stars_str}",
+                           font_size=28, centered=True, color=COLORS['success'])
+        self.add_child(stars_label)
+        
+        # 确认按钮
+        confirm_btn = Button(x + width // 2 - 60, y + 140, 120, 40, "确定",
+                            self._close, COLORS['success'])
+        self.add_child(confirm_btn)
+    
+    def update(self, dt: float):
+        """更新计时器"""
+        self.timer += dt
+        if self.timer >= self.auto_action_delay and self.on_auto_action:
+            self.on_auto_action()
+            self.on_auto_action = None  # 防止重复调用
+    
+    def _close(self):
+        if self.on_close:
+            self.on_close()
+        self.visible = False
 
 
 class ColorPicker(Panel):
