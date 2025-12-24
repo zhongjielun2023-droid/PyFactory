@@ -19,6 +19,7 @@ from config import (
     COLORS, GRID_SIZE, GRID_COLS, GRID_ROWS,
     MACHINE_TYPES, LEVEL_CATEGORIES
 )
+from config import STAR_FULL, STAR_EMPTY
 from shapes import Shape, create_shape, create_random_shape
 from machines import Machine, create_machine, SourceMachine, OutputMachine
 from game_engine import game_engine, code_executor, Factory, Level
@@ -322,9 +323,9 @@ class LevelSelectScene(GameScene):
         
         # 星星（已改为实心星/空心星）
         if completed:
-            star_text = "★" * stars + "☆" * (3 - stars)
+            star_text = STAR_FULL * stars + STAR_EMPTY * (3 - stars)
         else:
-            star_text = "☆☆☆"
+            star_text = STAR_EMPTY * 3
         star_label = Label(x + card.width - 100, y + 25, star_text, font_size=24)
         card.add_child(star_label)
         
@@ -821,7 +822,7 @@ source.connect(output)
         if game_engine.mode == 'playing' and game_engine.current_level:
             if game_engine.current_level.is_completed:
                 stars = game_engine.current_level.calculate_stars()
-                stars_str = '★' * stars if stars > 0 else '无'
+                stars_str = STAR_FULL * stars if stars > 0 else '无'
                 toast.show(f"关卡完成！获得 {stars} 星 {stars_str}", 'success')
                 game_engine.stop_factory()
     

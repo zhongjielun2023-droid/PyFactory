@@ -51,6 +51,10 @@ SHAPE_TYPES = ['circle', 'square', 'triangle', 'diamond', 'star', 'hexagon']
 # 图形颜色名称
 SHAPE_COLORS = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'white', 'gray']
 
+# 通用符号
+STAR_FULL = '★'
+STAR_EMPTY = '☆'
+
 # 机器类型定义
 MACHINE_TYPES = {
     'source': {'name': '源头', 'desc': '产生基础图形', 'category': 'basic'},

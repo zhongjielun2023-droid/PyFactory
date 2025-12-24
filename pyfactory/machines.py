@@ -11,6 +11,9 @@ from shapes import Shape, ShapePackage, ShapeDict, create_shape
 from config import COLORS, MACHINE_TYPES, GRID_SIZE
 from fonts import get_font
 
+# 调试开关：在发布时设为 False
+DEBUG = False
+
 
 class Connection:
     """连接类 - 表示机器之间的连接"""
@@ -31,11 +34,12 @@ class Connection:
             new_progress = progress + dt * self.speed
             if new_progress >= 1.0:
                 completed.append(i)
-                # 调试输出：记录传递事件
-                try:
-                    print(f"[DEBUG] Connection: delivering {item!r} from {self.from_machine.machine_type} -> {self.to_machine.machine_type} (port={self.to_port})")
-                except Exception:
-                    print("[DEBUG] Connection: delivering item (repr failed)")
+                # 调试输出：记录传递事件（受 DEBUG 控制）
+                if DEBUG:
+                    try:
+                        print(f"[DEBUG] Connection: delivering {item!r} from {self.from_machine.machine_type} -> {self.to_machine.machine_type} (port={self.to_port})")
+                    except Exception:
+                        print("[DEBUG] Connection: delivering item (repr failed)")
                 self.to_machine.receive(item, self.to_port)
             else:
                 self.items_in_transit[i] = (item, new_progress)
@@ -331,20 +335,22 @@ class OutputMachine(Machine):
         # 记录到已收集列表
         self.collected.append(item)
 
-        # 调试：打印收到的物品与匹配检查结果
-        try:
-            target_repr = repr(self.target_shape) if self.target_shape is not None else 'None'
-            is_shape = isinstance(item, Shape)
-            matches = item.matches(self.target_shape) if (is_shape and self.target_shape) else 'N/A'
-            print(f"[DEBUG] OutputMachine.process: received {item!r}; is_shape={is_shape}; target={target_repr}; matches={matches}; before_success={self.success_count}")
-        except Exception as e:
-            print(f"[DEBUG] OutputMachine.process: debug print failed: {e}")
+        # 调试：打印收到的物品与匹配检查结果（受 DEBUG 控制）
+        if DEBUG:
+            try:
+                target_repr = repr(self.target_shape) if self.target_shape is not None else 'None'
+                is_shape = isinstance(item, Shape)
+                matches = item.matches(self.target_shape) if (is_shape and self.target_shape) else 'N/A'
+                print(f"[DEBUG] OutputMachine.process: received {item!r}; is_shape={is_shape}; target={target_repr}; matches={matches}; before_success={self.success_count}")
+            except Exception as e:
+                print(f"[DEBUG] OutputMachine.process: debug print failed: {e}")
 
         # 检查是否匹配目标
         if self.target_shape and isinstance(item, Shape):
             if item.matches(self.target_shape):
                 self.success_count += 1
-                print(f"[DEBUG] OutputMachine: success_count incremented -> {self.success_count}")
+                if DEBUG:
+                    print(f"[DEBUG] OutputMachine: success_count incremented -> {self.success_count}")
 
         return None  # 输出机器不输出
     
@@ -367,12 +373,27 @@ class OutputMachine(Machine):
         center_x = x + GRID_SIZE // 2
         center_y = y + GRID_SIZE // 2
         
-        # 绘制输出标识（箭头向下）
-        pygame.draw.polygon(surface, COLORS['success'], [
-            (center_x, center_y + 12),
-            (center_x - 10, center_y - 5),
-            (center_x + 10, center_y - 5)
-        ])
+        # 绘制目标图形预览（如果已设置），并把箭头放在更下方以避免覆盖
+        if self.target_shape:
+            try:
+                # 以较大比例绘制目标，放在机器中央偏上
+                self.target_shape.draw(surface, center_x, center_y - 6, 0.6)
+            except Exception:
+                pass
+
+            # 当有目标时，绘制一个更小且更靠下的箭头，避免覆盖目标预览
+            pygame.draw.polygon(surface, COLORS['success'], [
+                (center_x, center_y + 32),
+                (center_x - 6, center_y + 8),
+                (center_x + 6, center_y + 8)
+            ])
+        else:
+            # 没有目标时，绘制默认大小的箭头
+            pygame.draw.polygon(surface, COLORS['success'], [
+                (center_x, center_y + 12),
+                (center_x - 10, center_y - 5),
+                (center_x + 10, center_y - 5)
+            ])
         
         # 显示机器名称
         font = get_font(14)
