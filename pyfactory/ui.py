@@ -772,7 +772,9 @@ class CodeEditor(Panel):
             return True
         
         if event.type == pygame.MOUSEWHEEL and self.focused:
-            if event.mod & pygame.KMOD_SHIFT:
+            # 检查Shift键是否按下（pygame 2.0+ 中MOUSEWHEEL事件没有mod属性）
+            mods = pygame.key.get_mods()
+            if mods & pygame.KMOD_SHIFT:
                 # Shift+滚轮: 水平滚动
                 self.scroll_x -= event.y * 30
                 self.scroll_x = max(0, self.scroll_x)

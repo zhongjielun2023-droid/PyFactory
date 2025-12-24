@@ -383,35 +383,51 @@ class GameScene_(GameScene):
         # 可调整的布局参数
         self.code_panel_width = 280  # 代码面板宽度
         self.hint_panel_width = 270  # 提示面板宽度
+        self.task_panel_width = 250   # 任务面板宽度
+        self.task_panel_height = 200  # 任务面板高度
+        self.programming_panel_width = 300  # 编程模式面板宽度
+        self.programming_panel_height = 250 # 编程模式面板高度
         
         # 网格区域（动态计算）
         self._update_layout()
         
-        # 操作提示面板（常驻显示）
-        self.op_hints = [
-            "[代码编程模式]",
-            "─────────────",
-            "* 编写Python代码创建机器",
-            "* 代码实时生成工厂布局",
-            "* 点击[运行]启动工厂",
-            "─────────────",
-            "可用机器:",
-            "  Source(形状,颜色)",
-            "  Painter(颜色)",
-            "  Rotator(角度)",
-            "  Output()",
-            "─────────────",
-            "连接: a.connect(b)"
+        # 操作提示面板内容（编程模式区文字内容）
+        self.programming_hints = [
+            "代码编程模式说明：",
+            "────────────────",
+            "• 编写Python代码创建机器",
+            "• 代码实时生成工厂布局", 
+            "• 点击[运行]启动工厂",
+            "────────────────",
+            "可用机器类型：",
+            "  Source(shape, color) - 源头",
+            "  Painter(color) - 喷漆机",
+            "  Rotator(angle) - 旋转机",
+            "  Output() - 输出口",
+            "────────────────",
+            "连接语法：",
+            "  machine1.connect(machine2)"
         ]
         
-        # 代码编辑器（始终显示，带实时解析回调）
+        # 代码编辑器（python代码区）
         self.code_editor = CodeEditor(10, 60, self.code_panel_width - 20, WINDOW_HEIGHT - 80, self._on_code_change)
         self.code_editor.visible = True
         self.code_editor.title = "Python代码"
         
-        # 提示面板
+        # 提示面板（提示区）
         self.hint_panel = HintPanel(WINDOW_WIDTH - self.hint_panel_width - 10, 60, self.hint_panel_width, 200)
         self.hint_panel.visible = True
+        
+        # 任务面板（任务区 - 位于提示区位置，当提示区退出后显示）
+        self.task_panel = Panel(WINDOW_WIDTH - self.hint_panel_width - 10, 60,
+                               self.hint_panel_width, 200, "")
+        
+        # 编程模式面板（编程模式区 - 位于任务区正下方并填满）
+        self.programming_panel = Panel(WINDOW_WIDTH - self.hint_panel_width - 10, 
+                                     60 + 200 + 10,  # 任务区底部 + 间距
+                                     self.hint_panel_width, 
+                                     WINDOW_HEIGHT - (60 + 200 + 10) - 10,  # 从任务区底部到窗口底部
+                                     "")
         
         # 分割条（可拖动调整大小）
         from ui import Splitter
@@ -421,11 +437,12 @@ class GameScene_(GameScene):
             min_pos=150, max_pos=500,
             on_drag=self._on_left_splitter_drag
         )
-        self.right_splitter = Splitter(
+        # 右侧区域宽度分割条（控制任务区和编程模式区的宽度）
+        self.right_area_splitter = Splitter(
             WINDOW_WIDTH - self.hint_panel_width - 10, 60, WINDOW_HEIGHT - 80,
             orientation='vertical',
             min_pos=WINDOW_WIDTH - 400, max_pos=WINDOW_WIDTH - 150,
-            on_drag=self._on_right_splitter_drag
+            on_drag=self._on_right_area_splitter_drag
         )
         
         # 控制按钮
@@ -506,39 +523,54 @@ class GameScene_(GameScene):
         # 更新提示面板位置
         self.hint_panel.x = width - self.hint_panel_width - 10
         
+        # 更新任务面板位置（与提示面板同步）
+        self.task_panel.x = width - self.hint_panel_width - 10
+        
+        # 更新编程模式面板位置和大小（位于任务区正下方并填满）
+        self.programming_panel.x = width - self.hint_panel_width - 10
+        self.programming_panel.y = 60 + 200 + 10
+        self.programming_panel.width = self.hint_panel_width
+        self.programming_panel.height = height - (60 + 200 + 10) - 10
+        
         # 更新分割条
         self.left_splitter.height = height - 80
-        self.right_splitter.height = height - 80
-        self.right_splitter.center_x = width - self.hint_panel_width - 10
-        self.right_splitter.x = self.right_splitter.center_x - 8
-        self.right_splitter.visual_x = self.right_splitter.center_x - 3
-        self.right_splitter.max_pos = width - 150
-        self.right_splitter.min_pos = width - 400
+        self.right_area_splitter.height = height - 80
+        self.right_area_splitter.center_x = width - self.hint_panel_width - 10
+        self.right_area_splitter.x = self.right_area_splitter.center_x - 8
+        self.right_area_splitter.visual_x = self.right_area_splitter.center_x - 3
+        self.right_area_splitter.max_pos = width - 150
+        self.right_area_splitter.min_pos = width - 400
         
         # 更新布局
         self._update_layout()
         self._update_button_positions()
     
     def _on_left_splitter_drag(self, new_x: int):
-        """左分割条拖动回调"""
+        """左侧分割条拖动回调（只调整Python代码区宽度，不影响其他UI）"""
         self.code_panel_width = new_x
-        self._update_layout()
+        
         # 更新代码编辑器大小
         self.code_editor.width = self.code_panel_width - 20
-        self.code_editor.x = 10
+        
         # 更新控制按钮位置
         self._update_button_positions()
     
-    def _on_right_splitter_drag(self, new_x: int):
-        """右分割条拖动回调"""
+    def _on_right_area_splitter_drag(self, new_x: int):
+        """右侧区域宽度分割条拖动回调（同时调整任务区和编程模式区的宽度）"""
         w = self.game.window_width if hasattr(self.game, 'window_width') else WINDOW_WIDTH
         self.hint_panel_width = w - new_x - 10
         self._update_layout()
         # 更新提示面板位置和大小
         self.hint_panel.x = new_x + 10
         self.hint_panel.width = self.hint_panel_width
-        # 更新右分割条位置
-        self.right_splitter.x = new_x
+        # 更新任务面板位置和大小（与提示面板同步）
+        self.task_panel.x = new_x + 10
+        self.task_panel.width = self.hint_panel_width
+        # 更新编程模式面板位置和大小
+        self.programming_panel.x = new_x + 10
+        self.programming_panel.width = self.hint_panel_width
+        # 更新分割条位置
+        self.right_area_splitter.x = new_x
     
     def _update_button_positions(self):
         """更新控制按钮位置 - 紧凑布局"""
@@ -751,14 +783,13 @@ source.connect(output)
                 return
         
         # 处理分割条事件（优先级最高）
-        # 先让两个分割条都处理MOUSEMOTION以更新hover状态
+        # 先让所有分割条都处理MOUSEMOTION以更新hover状态
         left_handled = self.left_splitter.handle_event(event)
-        right_handled = self.right_splitter.handle_event(event)
+        right_area_handled = self.right_area_splitter.handle_event(event)
         
         # 如果分割条正在拖动，阻止其他处理
-        if left_handled or right_handled:
-            if self.left_splitter.dragging or self.right_splitter.dragging:
-                return
+        if (self.left_splitter.dragging or self.right_area_splitter.dragging):
+            return
         
         # 处理UI元素事件（代码编辑器优先）
         self.code_editor.handle_event(event)
@@ -930,17 +961,18 @@ source.connect(output)
             rect = pygame.Rect(preview_x + 4, preview_y + 4, GRID_SIZE - 8, GRID_SIZE - 8)
             pygame.draw.rect(surface, (*COLORS['accent'], 100), rect, border_radius=8)
         
-        # 绘制目标
-        if self.target_shape:
-            self._draw_target(surface)
-        
-        # 绘制关卡信息
-        if game_engine.current_level:
-            self._draw_level_info(surface)
-        
         # 绘制UI（代码驱动模式）
         self.code_editor.draw(surface)
         self.hint_panel.draw(surface)
+        
+        # 绘制任务面板（当提示区隐藏时显示）
+        if not self.hint_panel.visible:
+            self.task_panel.draw(surface)
+            self._draw_task_content(surface)
+        
+        # 绘制编程模式面板（右下角填满）
+        self.programming_panel.draw(surface)
+        self._draw_programming_content(surface)
         
         # 绘制成就对话框
         if self.achievement_dialog:
@@ -948,14 +980,11 @@ source.connect(output)
         
         # 绘制分割条
         self.left_splitter.draw(surface)
-        self.right_splitter.draw(surface)
+        self.right_area_splitter.draw(surface)
         
         for btn in self.control_buttons:
             btn.draw(surface)
         self.speed_label.draw(surface)
-        
-        # 绘制操作提示面板
-        self._draw_op_hints(surface)
         
         # 绘制错误信息
         if self.code_editor.error_msg:
@@ -968,7 +997,7 @@ source.connect(output)
             tutorial.set_highlight_rect('grid', 
                 pygame.Rect(self.grid_x, self.grid_y, self.grid_width, self.grid_height))
             tutorial.set_highlight_rect('target', 
-                pygame.Rect(self.grid_x + self.grid_width + 20, self.grid_y + 10, 110, 90))
+                pygame.Rect(self.task_panel.x + 10, self.task_panel.y + 30, 90, 70))
             tutorial.set_highlight_rect('controls', 
                 pygame.Rect(self.grid_x, 10, 400, 50))
             tutorial.set_highlight_rect('hint_btn', 
@@ -998,28 +1027,8 @@ source.connect(output)
         pygame.draw.rect(surface, COLORS['panel_border'], grid_rect, 2)
     
     def _draw_op_hints(self, surface: pygame.Surface):
-        """绘制操作提示面板"""
-        # 面板位置（网格右侧下方）
-        panel_x = self.grid_x + self.grid_width + 20
-        panel_y = self.grid_y + 200
-        panel_w = 200
-        panel_h = len(self.op_hints) * 22 + 20
-        
-        # 背景
-        rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
-        pygame.draw.rect(surface, COLORS['panel_bg'], rect, border_radius=8)
-        pygame.draw.rect(surface, COLORS['accent'], rect, 2, border_radius=8)
-        
-        # 文字
-        font = get_font(16)
-        y = panel_y + 10
-        for hint in self.op_hints:
-            color = COLORS['accent'] if hint.startswith("[") else COLORS['text']
-            if hint.startswith("─"):
-                color = COLORS['text_secondary']
-            text = font.render(hint, True, color)
-            surface.blit(text, (panel_x + 10, y))
-            y += 22
+        """绘制操作提示面板（已废弃，由编程模式面板替代）"""
+        pass
     
     def _draw_error_msg(self, surface: pygame.Surface):
         """绘制代码错误信息"""
@@ -1036,61 +1045,74 @@ source.connect(output)
         text = font.render(f"错误: {self.code_editor.error_msg[:25]}", True, COLORS['error'])
         surface.blit(text, (error_x + 10, error_y + 12))
     
-    def _draw_target(self, surface: pygame.Surface):
-        """绘制目标图形"""
-        target_x = self.grid_x + self.grid_width + 30
-        target_y = self.grid_y + 20
-        
-        # 背景
-        rect = pygame.Rect(target_x - 10, target_y - 10, 100, 80)
-        pygame.draw.rect(surface, COLORS['panel_bg'], rect, border_radius=8)
-        pygame.draw.rect(surface, COLORS['success'], rect, 2, border_radius=8)
+    def _draw_task_content(self, surface: pygame.Surface):
+        """绘制任务区内容（原目标显示）"""
+        if not self.target_shape:
+            return
+            
+        # 在任务面板内绘制目标
+        target_x = self.task_panel.x + 20
+        target_y = self.task_panel.y + 40
         
         # 标签
         font = get_font(20)
-        text = font.render("目标", True, COLORS['success'])
-        surface.blit(text, (target_x + 30, target_y - 5))
+        text = font.render("任务目标", True, COLORS['success'])
+        surface.blit(text, (target_x + 15, target_y - 5))
         
         # 图形
         self.target_shape.draw(surface, target_x + 40, target_y + 40, 0.8)
-    
-    def _draw_level_info(self, surface: pygame.Surface):
-        """绘制关卡信息"""
-        level = game_engine.current_level
         
-        # 关卡标题
-        font = get_font(28)
-        title = font.render(level.title, True, COLORS['text'])
-        surface.blit(title, (self.grid_x + self.grid_width + 20, 
-                            self.grid_y + 110))
-        
-        # Python概念
-        if level.python_concept:
-            concept_font = get_font(20)
-            concept = concept_font.render(f"学习: {level.python_concept}", 
-                                         True, COLORS['accent'])
-            surface.blit(concept, (self.grid_x + self.grid_width + 20,
-                                  self.grid_y + 140))
-        
-        # 计时（更稳健的计算，避免 start_time 未初始化或错误导致的负值）
-        try:
-            if level.factory.running:
-                # 使用 time.time() 与 Level.start/stop 保持一致
-                start = getattr(level, 'start_time', None)
-                now = time.time()
-                if start and now >= start:
-                    elapsed = (level.elapsed_time or 0.0) + (now - start)
+        # 关卡信息
+        if game_engine.current_level:
+            level = game_engine.current_level
+            info_y = target_y + 80
+            
+            # 关卡标题
+            title_font = get_font(18)
+            title = title_font.render(level.title, True, COLORS['text'])
+            surface.blit(title, (target_x, info_y))
+            
+            # Python概念
+            if level.python_concept:
+                concept_font = get_font(16)
+                concept = concept_font.render(f"学习: {level.python_concept}", 
+                                             True, COLORS['accent'])
+                surface.blit(concept, (target_x, info_y + 25))
+            
+            # 计时
+            try:
+                if level.factory.running:
+                    start = getattr(level, 'start_time', None)
+                    now = time.time()
+                    if start and now >= start:
+                        elapsed = (level.elapsed_time or 0.0) + (now - start)
+                    else:
+                        elapsed = max(0.0, float(level.elapsed_time or 0.0))
                 else:
-                    elapsed = max(0.0, float(level.elapsed_time or 0.0))
-            else:
-                elapsed = float(level.elapsed_time or 0.0)
-        except Exception:
-            elapsed = 0.0
+                    elapsed = float(level.elapsed_time or 0.0)
+            except Exception:
+                elapsed = 0.0
+            
+            time_text = f"时间: {elapsed:.1f}s"
+            time_label = title_font.render(time_text, True, COLORS['text_secondary'])
+            surface.blit(time_label, (target_x, info_y + 45))
+    
+    def _draw_programming_content(self, surface: pygame.Surface):
+        """绘制编程模式区内容（文字说明）"""
+        font = get_font(16)
+        y = self.programming_panel.y + 35
+        x = self.programming_panel.x + 10
         
-        time_text = f"时间: {elapsed:.1f}s"
-        time_label = font.render(time_text, True, COLORS['text_secondary'])
-        surface.blit(time_label, (self.grid_x + self.grid_width + 20,
-                                 self.grid_y + 165))
+        for hint in self.programming_hints:
+            color = COLORS['accent'] if hint.startswith("代码编程模式") else COLORS['text']
+            if hint.startswith("─"):
+                color = COLORS['text_secondary']
+            elif ":" in hint and not hint.startswith(" "):
+                color = COLORS['warning']
+            
+            text = font.render(hint, True, color)
+            surface.blit(text, (x, y))
+            y += 20
 
 
 class AchievementsScene(GameScene):
