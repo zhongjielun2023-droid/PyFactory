@@ -31,6 +31,11 @@ class Connection:
             new_progress = progress + dt * self.speed
             if new_progress >= 1.0:
                 completed.append(i)
+                # 调试输出：记录传递事件
+                try:
+                    print(f"[DEBUG] Connection: delivering {item!r} from {self.from_machine.machine_type} -> {self.to_machine.machine_type} (port={self.to_port})")
+                except Exception:
+                    print("[DEBUG] Connection: delivering item (repr failed)")
                 self.to_machine.receive(item, self.to_port)
             else:
                 self.items_in_transit[i] = (item, new_progress)
@@ -323,13 +328,24 @@ class OutputMachine(Machine):
         self.success_count = 0
         
     def process(self, item: Any) -> Optional[Any]:
+        # 记录到已收集列表
         self.collected.append(item)
-        
+
+        # 调试：打印收到的物品与匹配检查结果
+        try:
+            target_repr = repr(self.target_shape) if self.target_shape is not None else 'None'
+            is_shape = isinstance(item, Shape)
+            matches = item.matches(self.target_shape) if (is_shape and self.target_shape) else 'N/A'
+            print(f"[DEBUG] OutputMachine.process: received {item!r}; is_shape={is_shape}; target={target_repr}; matches={matches}; before_success={self.success_count}")
+        except Exception as e:
+            print(f"[DEBUG] OutputMachine.process: debug print failed: {e}")
+
         # 检查是否匹配目标
         if self.target_shape and isinstance(item, Shape):
             if item.matches(self.target_shape):
                 self.success_count += 1
-        
+                print(f"[DEBUG] OutputMachine: success_count incremented -> {self.success_count}")
+
         return None  # 输出机器不输出
     
     def set_target(self, shape: Shape, count: int = 1):

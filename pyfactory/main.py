@@ -320,8 +320,11 @@ class LevelSelectScene(GameScene):
                     font_size=18, color=COLORS['text_secondary'])
         card.add_child(desc)
         
-        # 星星
-        star_text = "*" * stars + "-" * (3 - stars) if completed else "---"
+        # 星星（已改为实心星/空心星）
+        if completed:
+            star_text = "★" * stars + "☆" * (3 - stars)
+        else:
+            star_text = "☆☆☆"
         star_label = Label(x + card.width - 100, y + 25, star_text, font_size=24)
         card.add_child(star_label)
         
@@ -640,6 +643,21 @@ source.connect(output)
         for from_idx, to_idx in connections:
             if from_idx < len(machine_objects) and to_idx < len(machine_objects):
                 factory.connect(machine_objects[from_idx], machine_objects[to_idx])
+
+        # 若当前处于关卡模式且关卡定义了目标形状，
+        # 将目标形状分配到所有 OutputMachine 上以便匹配计数。
+        try:
+            if game_engine.mode == 'playing' and game_engine.current_level:
+                lvl = game_engine.current_level
+                if getattr(lvl, 'target_data', {}) and 'shape' in lvl.target_data:
+                    target_shape = lvl._create_target_shape()
+                    required = lvl.target_data.get('count', 1)
+                    for m in factory.machines:
+                        if isinstance(m, OutputMachine):
+                            m.set_target(target_shape, required)
+                            print(f"[DEBUG] _on_code_change: set target on OutputMachine at ({m.x},{m.y}) -> {target_shape!r}, count={required}")
+        except Exception as e:
+            print(f"[DEBUG] _on_code_change: failed to set output target: {e}")
     
     def _on_color_select(self, color: str):
         if self.selected_machine:
@@ -803,7 +821,8 @@ source.connect(output)
         if game_engine.mode == 'playing' and game_engine.current_level:
             if game_engine.current_level.is_completed:
                 stars = game_engine.current_level.calculate_stars()
-                toast.show(f"关卡完成！获得 {'*' * stars}星", 'success')
+                stars_str = '★' * stars if stars > 0 else '无'
+                toast.show(f"关卡完成！获得 {stars} 星 {stars_str}", 'success')
                 game_engine.stop_factory()
     
     def draw(self, surface: pygame.Surface):
